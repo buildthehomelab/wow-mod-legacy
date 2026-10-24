@@ -9,8 +9,12 @@ up to 16 of those points on perks in three trees: **Adventure**, **Resourcefulne
 **Professions**. None of the perks adds combat power; they make levelling, travelling and
 professions easier.
 
-Perks are picked in the launcher's LEGACY page. The launcher reaches the module through the portal
-(`api/launcher/legacy.php`), which runs the module's console commands over SOAP. Changes are
+Perks are picked on the LEGACY page of the
+[Portalkeeper launcher fork](https://github.com/buildthehomelab/wow-Portalkeeper). The launcher
+reaches the module through the
+[portal](https://github.com/buildthehomelab/wow-mod-azerothcore-portal) (`api/launcher/legacy.php`),
+which runs the module's console commands over SOAP. Any other front end can use the same two
+commands (see [Commands](#commands)). Changes are
 free, can be made at any time, and apply at once to a character that is online, except while it
 is in combat.
 
@@ -128,6 +132,13 @@ own rows at 700 or above. Challenge types:
 | `.legacy set <account> <guid> <perk=rank,...>` | console / SOAP | Saves a character's whole build (`-` for none). |
 | `.legacy reload` | administrators | Reloads the challenges. |
 
+## Requirements
+
+- AzerothCore (WotLK 3.3.5a). Two perks use optional core hooks; see the end of Installation.
+- SOAP enabled on the worldserver, for the launcher's page (the portal runs `.legacy list` and
+  `.legacy set` as console commands).
+- Optional: mod-challenges, for the separate hardcore points.
+
 ## Installation
 
 ```
@@ -155,9 +166,29 @@ them:
 - Tables: `mod_legacy_challenge` (world); `mod_legacy_challenge_done`, `mod_legacy_rank` and
   `mod_legacy_character` (characters).
 
+## Troubleshooting
+
+- **No challenges load** (`mod-legacy: 0 challenges loaded` at startup): the world SQL hasn't
+  applied. Without challenges nothing is judged, and saved builds stay as they are.
+- **A challenge is skipped at startup**: its class, skill, achievement or faction isn't in this
+  server's data. Naxxramas (Level 60) needs mod-individual-progression's achievement (533), and
+  only mod-individual-progression awards Onyxia's Lair (Level 60) (684).
+- **A player's perks "switched off" at login**: the build needs more points than the character
+  has now (a lower `Legacy.PointCap`, challenges switched off, or Hardcore taken after picking).
+  Changing the build in the launcher, or undoing the change, brings them back.
+- **Reagent Economy does nothing for a class**: the startup log lists, per class, how many spell
+  ranks need only vendor reagents.
+
+## Credits
+
+- The Legacy system's design, perks and point rules are from Blizzard's WoW Forever.
+- Several perks are modelled on mod-guild-levels' guild perks.
+
 ## Uninstall
 
 Run `data/sql/uninstall/mod_legacy_uninstall_world.sql` on the world database and
 `mod_legacy_uninstall_characters.sql` on the characters database, with the server stopped.
 
-Released under the MIT License.
+## License
+
+Released under the [MIT License](LICENSE).
