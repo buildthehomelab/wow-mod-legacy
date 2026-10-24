@@ -1,0 +1,49 @@
+[worldserver]
+
+########################################
+# mod-legacy
+#
+# WoW Forever's Legacy system: challenges done anywhere on the account earn Legacy points, and
+# every character spends them on perks in three trees. Perks are picked in the launcher (the
+# portal's api/launcher/legacy.php, LEGACY_ENABLED). The challenges are the world table
+# mod_legacy_challenge.
+########################################
+
+#
+#    Legacy.Enable
+#        Description: Master switch. With 0 no perk does anything, no challenge is counted and
+#                     the launcher's LEGACY page says Legacy is off. Points earned and perks
+#                     picked are rows in the characters database and stay for when it's back on.
+#        Default:     1
+#
+
+Legacy.Enable = 1
+
+#
+#    Legacy.PointCap
+#        Description: The most Legacy points one character can spend. WoW Forever's first
+#                     season allows 16; the challenges can earn an account far more. Lowering it
+#                     resets the perks of characters that spent more, at their next login.
+#        Default:     16
+#
+
+Legacy.PointCap = 16
+
+#
+#    Legacy.Hardcore.SeparatePoints
+#        Description: 1: like WoW Forever, a hardcore character (mod-challenges' Hardcore,
+#                     still running) spends only the points hardcore characters earned, while
+#                     normal characters spend everything. 0: one pool for everyone. Without
+#                     mod-challenges this does nothing.
+#        Default:     1
+#
+
+Legacy.Hardcore.SeparatePoints = 1
+
+#
+#    Legacy.AnnounceChallenges
+#        Description: Tell a player in chat when they complete a challenge.
+#        Default:     1
+#
+
+Legacy.AnnounceChallenges = 1
