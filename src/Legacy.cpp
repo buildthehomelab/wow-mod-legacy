@@ -47,7 +47,7 @@ namespace
         { PERK_WELL_RESTED, "well_rested", TREE_ADVENTURE, "Well Rested", "spell_nature_sleep", 5, 0, 1, 0, NO_PERK, 4,
             "Rested experience builds up faster, and you can store more of it." },
         { PERK_THRILL_OF_ADVENTURE, "thrill_of_adventure", TREE_ADVENTURE, "Thrill of Adventure", "ability_warrior_rampage", 5, 0, 2, 0, NO_PERK, 1,
-            "Killing an enemy that gives experience restores health and mana over 10 sec. Not in dungeons, raids or battlegrounds." },
+            "Killing an enemy that gives experience (you or your pet) restores health and mana over 10 sec. Not in dungeons, raids or battlegrounds." },
         { PERK_FIELD_MEDICINE, "field_medicine", TREE_ADVENTURE, "Field Medicine", "inv_misc_bandage_15", 2, 1, 0, 5, NO_PERK, 5,
             "Recently Bandaged wears off sooner. Not in dungeons, raids or battlegrounds." },
         { PERK_EXPLORERS_STRIDE, "explorers_stride", TREE_ADVENTURE, "Explorer's Stride", "ability_rogue_sprint", 5, 1, 1, 5, PERK_WELL_RESTED, 2,
@@ -68,12 +68,12 @@ namespace
         { PERK_PERMANENCE, "permanence", TREE_RESOURCEFULNESS, "Permanence", "spell_holy_magicalsentry", 2, 1, 1, 5, PERK_GOURMAND, 25,
             "Your long class buffs (10 min or more) that you can cast on others last longer." },
         { PERK_QUICK_AND_DEAD, "the_quick_and_the_dead", TREE_RESOURCEFULNESS, "The Quick and the Dead", "spell_shadow_ghostkey", 2, 1, 2, 5, NO_PERK, 5,
-            "You move faster as a ghost. At rank 2, your helpful spells also cost nothing for 1 min after you come back to life, until you enter combat." },
+            "You move faster as a ghost. At rank 2, your helpful spells also cost nothing for 1 min after you come back to life, until you enter combat. Not in battlegrounds or arenas." },
         { PERK_REAGENT_ECONOMY, "reagent_economy", TREE_RESOURCEFULNESS, "Reagent Economy", "inv_misc_bag_10", 1, 2, 1, 10, NO_PERK, 0,
             "Your class abilities no longer need reagents that vendors sell." },
 
         { PERK_WORKING_OVERTIME, "working_overtime", TREE_PROFESSIONS, "Working Overtime", "inv_misc_pocketwatch_01", 5, 0, 0, 0, NO_PERK, 4,
-            "A higher chance of a skill-up when you craft or gather, while the recipe or node isn't gray." },
+            "An extra chance of a skill-up when you craft or gather, while the recipe or node isn't gray." },
         { PERK_MASTER_CHEF, "master_chef", TREE_PROFESSIONS, "Master Chef", "inv_misc_food_15", 5, 0, 1, 0, NO_PERK, 10,
             "A chance to cook one more of whatever you make." },
         { PERK_LUREMASTER, "luremaster", TREE_PROFESSIONS, "Luremaster", "trade_fishing", 2, 0, 2, 0, NO_PERK, 25,
@@ -96,6 +96,7 @@ namespace
 
     std::shared_mutex buildLock;
     std::unordered_map<uint32, Build> builds;
+    std::unordered_set<uint32> suspended;
 
     // Challenges.
     enum ChallengeType : uint8
@@ -208,11 +209,17 @@ namespace
 
     Watched watched;
 
+    struct Fresh
+    {
+        Challenge challenge;
+        bool newForAccount = false;     // false: only new for the account's hardcore points
+    };
+
     // Records what `guid` did. Returns the challenges that were new for the account (or new for
     // its hardcore points).
-    std::vector<Challenge> Record(uint32 account, uint32 guid, bool hardcore, std::vector<Challenge const*> const& met)
+    std::vector<Fresh> Record(uint32 account, uint32 guid, bool hardcore, std::vector<Challenge const*> const& met)
     {
-        std::vector<Challenge> fresh;
+        std::vector<Fresh> fresh;
         uint32 now = uint32(GameTime::GetGameTime().count());
         CharacterDatabaseTransaction trans;
 
@@ -245,7 +252,7 @@ namespace
                 "hardcore_guid = IF(hardcore_guid = 0, VALUES(hardcore_guid), hardcore_guid), "
                 "hardcore_at = IF(hardcore_at = 0, VALUES(hardcore_at), hardcore_at)",
                 account, challenge->id, row.guid, row.at, row.hardcoreGuid, row.hardcoreAt);
-            fresh.push_back(*challenge);
+            fresh.push_back({ *challenge, isNew });
         }
 
         if (trans)
@@ -311,7 +318,7 @@ namespace Legacy
             case PERK_WELL_RESTED:
                 return Acore::StringFormat("Rested experience builds up {}% faster, and you can store {}% more of it.", value, value);
             case PERK_THRILL_OF_ADVENTURE:
-                return Acore::StringFormat("Killing an enemy that gives experience restores {}% of your health and mana over 10 sec. Not in dungeons, raids or battlegrounds.", value);
+                return Acore::StringFormat("Killing an enemy that gives experience (you or your pet) restores {}% of your health and mana over 10 sec. Not in dungeons, raids or battlegrounds.", value);
             case PERK_FIELD_MEDICINE:
                 return Acore::StringFormat("Recently Bandaged lasts {} sec less. Not in dungeons, raids or battlegrounds.", value);
             case PERK_EXPLORERS_STRIDE:
@@ -333,12 +340,12 @@ namespace Legacy
                 return Acore::StringFormat("Your class buffs of 10 min or more that you can cast on others last {}% longer.", value);
             case PERK_QUICK_AND_DEAD:
                 return rank >= 2
-                    ? Acore::StringFormat("You move {}% faster as a ghost, and your helpful spells cost nothing for 1 min after you come back to life, until you enter combat.", value)
-                    : Acore::StringFormat("You move {}% faster as a ghost.", value);
+                    ? Acore::StringFormat("You move {}% faster as a ghost, and your helpful spells cost nothing for 1 min after you come back to life, until you enter combat. Not in battlegrounds or arenas.", value)
+                    : Acore::StringFormat("You move {}% faster as a ghost. Not in battlegrounds or arenas.", value);
             case PERK_REAGENT_ECONOMY:
                 return "Your class abilities no longer need reagents that vendors sell.";
             case PERK_WORKING_OVERTIME:
-                return Acore::StringFormat("A {}% higher chance of a skill-up when you craft or gather, while the recipe or node isn't gray.", value);
+                return Acore::StringFormat("An extra {}% chance of a skill-up when you craft or gather, while the recipe or node isn't gray.", value);
             case PERK_MASTER_CHEF:
                 return Acore::StringFormat("A {}% chance to cook one more of whatever you make.", value);
             case PERK_LUREMASTER:
@@ -367,9 +374,10 @@ namespace Legacy
     {
         if (!config.enabled || !player)
             return 0;
+        uint32 guid = player->GetGUID().GetCounter();
         std::shared_lock<std::shared_mutex> guard(buildLock);
-        auto itr = builds.find(player->GetGUID().GetCounter());
-        return itr != builds.end() ? itr->second[perk] : 0;
+        auto itr = builds.find(guid);
+        return itr != builds.end() && !suspended.count(guid) ? itr->second[perk] : 0;
     }
 
     void SetBuild(uint32 guid, Build const& build)
@@ -382,16 +390,30 @@ namespace Legacy
         CharacterDatabase.CommitTransaction(trans);
 
         std::unique_lock<std::shared_mutex> guard(buildLock);
+        suspended.erase(guid);
         if (Spent(build))
             builds[guid] = build;
         else
             builds.erase(guid);
     }
 
+    void SuspendBuild(uint32 guid)
+    {
+        std::unique_lock<std::shared_mutex> guard(buildLock);
+        suspended.insert(guid);
+    }
+
+    bool IsSuspended(uint32 guid)
+    {
+        std::shared_lock<std::shared_mutex> guard(buildLock);
+        return suspended.count(guid);
+    }
+
     void ForgetCharacter(uint32 guid)
     {
         std::unique_lock<std::shared_mutex> guard(buildLock);
         builds.erase(guid);
+        suspended.erase(guid);
     }
 
     uint32 Spent(Build const& build)
@@ -474,7 +496,13 @@ namespace Legacy
         return CharacterDatabase.Query("SELECT 1 FROM mod_challenges_character WHERE guid = {} AND (challenge & 1) AND state = 0", guid) != nullptr;
     }
 
-    void CheckChallenges(Player* player)
+    size_t ChallengeCount()
+    {
+        std::shared_lock<std::shared_mutex> guard(challengeLock);
+        return challenges.size();
+    }
+
+    void CheckChallenges(Player* player, bool hardcore)
     {
         if (!config.enabled || !player->GetSession() || IsBotSession(player->GetSession()))
             return;
@@ -495,18 +523,11 @@ namespace Legacy
         uint32 account = player->GetSession()->GetAccountId();
         uint32 guid = player->GetGUID().GetCounter();
 
-        std::vector<Challenge> fresh;
+        hardcore = hardcore && hardcoreTable && config.hardcorePool;
+        std::vector<Fresh> fresh;
         {
             std::shared_lock<std::shared_mutex> guard(challengeLock);
-            // Hardcore or not only matters once something is done; checking costs a query.
-            std::vector<Challenge const*> met = Unmet(account, false, progress);
-            bool hardcore = false;
-            if (hardcoreTable && config.hardcorePool)
-            {
-                std::vector<Challenge const*> metHardcore = Unmet(account, true, progress);
-                if (!metHardcore.empty() && (hardcore = IsHardcore(guid)))
-                    met = std::move(metHardcore);
-            }
+            std::vector<Challenge const*> met = Unmet(account, hardcore, progress);
             if (met.empty())
                 return;
             fresh = Record(account, guid, hardcore, met);
@@ -517,8 +538,14 @@ namespace Legacy
 
         Earned earned = GetEarned(account);
         ChatHandler chat(player->GetSession());
-        for (Challenge const& challenge : fresh)
-            chat.PSendSysMessage("|cffe6cc80Legacy:|r {} complete. +1 Legacy point ({} earned on your account).", challenge.name, earned.total);
+        for (Fresh const& done : fresh)
+        {
+            if (done.newForAccount)
+                chat.PSendSysMessage("|cffe6cc80Legacy:|r {} complete. +1 Legacy point ({} earned on your account).", done.challenge.name, earned.total);
+            else
+                chat.PSendSysMessage("|cffe6cc80Legacy:|r {} complete on a hardcore character. +1 hardcore Legacy point ({} earned by hardcore characters).",
+                    done.challenge.name, earned.hardcore);
+        }
     }
 
     void BackfillAccount(uint32 account)
@@ -774,8 +801,9 @@ namespace Legacy
             if (isDone)
             {
                 auto name = names.find(itr->second.guid);
-                // A deleted character keeps its points for the account but has no name.
-                by = name != names.end() ? name->second : "a deleted character";
+                // A deleted character keeps its points for the account but has no name (an
+                // unlinked one keeps its row with the name cleared).
+                by = name != names.end() && !name->second.empty() ? name->second : "a deleted character";
             }
             json += Acore::StringFormat("{}{{\"id\":{},\"category\":{},\"name\":{},\"description\":{},\"done\":{},\"hardcore\":{},\"by\":{},\"at\":{}}}",
                 i ? "," : "", c.id, JsonString(c.category), JsonString(c.name), JsonString(c.description),

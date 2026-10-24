@@ -13,13 +13,15 @@
  * - Salvager replaces Performance Bonus (no commerce crates).
  * - Dedicated Study does nothing once every profession is at its maximum (no Elemental Essence).
  * - For Great Honor counts honorable kills; battleground bonus honor has no hook.
- * - Reinforce gives back part of the durability lost between a killing blow and resurrection,
- *   since the core has no hook on durability loss.
- * - The Quick and the Dead refunds the cost of helpful spells just after they are cast, so a
- *   spell still needs the mana to start.
- * - Well Rested needs the core's OnPlayerGainRestBonus / OnPlayerGetRestBonusMax hooks and
- *   Frequent Flier's speed the OnPlayerTaxiFlightSpeed hook; on a core without them those parts
- *   do nothing.
+ * - Reinforce gives back part of the durability lost between a killing blow and the update after
+ *   resurrection (the death and the spirit healer), since the core has no hook on durability loss.
+ * - The Quick and the Dead refunds what a helpful spell took just after the cast, so a spell
+ *   still needs the mana to start.
+ * - Working Overtime is a second skill-up roll, so at orange recipes it can give two points.
+ * - Well Rested needs the core's OnPlayerGainRestBonus / OnPlayerGetRestBonusMax hooks, and
+ *   Frequent Flier the OnPlayerTaxiCostDiscount / OnPlayerTaxiFlightSpeed hooks. On a core
+ *   without them Well Rested and the faster flights do nothing, and only a flight's first leg is
+ *   cheaper (the flight master's price).
  *
  * Released under the MIT License.
  */
@@ -88,16 +90,28 @@ namespace
         uint32 thrillTimer = 0;
         uint32 thrillPerTick = 0;
 
+        // Hardcore (mod-challenges), from the database at login, level-up and resurrection.
+        bool hardcore = false;
+
+        // Dedicated Study: when this character last got its skill point.
+        uint32 studyAt = 0;
+        bool studyLoaded = false;
+
         // Second Wind: shorten the sickness once the resurrection has applied it.
         bool shortenSickness = false;
 
-        // The Quick and the Dead: free helpful spells until then, and costs to give back.
+        // The Quick and the Dead: free helpful spells until then. Per power, what the player had
+        // before the casts since the last update and what those casts cost; what was really
+        // taken (up to the cost) goes back at the next update, after TakePower.
         Seconds freeUntil = 0s;
-        std::array<uint32, MAX_POWERS> refund = {};
+        std::array<int32, MAX_POWERS> powerBefore = {};
+        std::array<uint32, MAX_POWERS> cost = {};
 
-        // Reinforce: durability of every item at the killing blow, given back at resurrection.
+        // Reinforce: durability of every item at the killing blow, given back at the update
+        // after resurrection (after the spirit healer's loss too).
         std::vector<std::pair<ObjectGuid, uint32>> snapshot;
         Seconds snapshotAt = 0s;
+        bool restore = false;
     };
 
     PerkData* DataOf(Player* player)
@@ -265,13 +279,18 @@ namespace
         return false;
     }
 
-    void DedicatedStudy(Player* player)
+    void DedicatedStudy(Player* player, PerkData* data)
     {
         uint32 guid = player->GetGUID().GetCounter();
+        if (!data->studyLoaded)
+        {
+            data->studyLoaded = true;
+            if (QueryResult result = CharacterDatabase.Query("SELECT study_at FROM mod_legacy_character WHERE guid = {}", guid))
+                data->studyAt = result->Fetch()[0].Get<uint32>();
+        }
         uint32 dayStart = uint32(sWorld->GetNextDailyQuestsResetTime().count()) - DAY;
-        if (QueryResult result = CharacterDatabase.Query("SELECT study_at FROM mod_legacy_character WHERE guid = {}", guid))
-            if (result->Fetch()[0].Get<uint32>() >= dayStart)
-                return;
+        if (data->studyAt >= dayStart)
+            return;
 
         uint32 lowest = 0;
         uint16 lowestValue = 0;
@@ -294,7 +313,9 @@ namespace
             return;
 
         player->SetSkill(lowest, player->GetSkillStep(lowest), lowestValue + 1, player->GetPureMaxSkillValue(lowest));
-        CharacterDatabase.Execute("REPLACE INTO mod_legacy_character (guid, study_at) VALUES ({}, {})", guid, uint32(GameTime::GetGameTime().count()));
+        data->studyAt = uint32(GameTime::GetGameTime().count());
+        // Direct, so a quick relog can't read the old time back. At most once a day.
+        CharacterDatabase.DirectExecute("REPLACE INTO mod_legacy_character (guid, study_at) VALUES ({}, {})", guid, data->studyAt);
         SkillLineEntry const* skill = sSkillLineStore.LookupEntry(lowest);
         ChatHandler(player->GetSession()).PSendSysMessage("|cffe6cc80Dedicated Study:|r your {} rises to {}.", skill->name[0], lowestValue + 1);
     }
@@ -314,6 +335,8 @@ namespace Legacy
         Keep(player, SPELL_EXPLORERS_STRIDE, stride && alive && !player->IsInCombat() && !player->IsMounted() && !InInstance(player), int32(stride));
 
         uint32 ghost = Percent(player, PERK_QUICK_AND_DEAD);
+        if (pvp)
+            DataOf(player)->freeUntil = 0s;
         Keep(player, SPELL_QUICK_AND_DEAD, ghost && !pvp && player->HasPlayerFlag(PLAYER_FLAGS_GHOST), int32(ghost));
 
         uint8 cls = player->getClass();
@@ -330,7 +353,7 @@ namespace Legacy
         for (auto const& [entry, creature] : *sObjectMgr->GetCreatureTemplates())
             if (VendorItemData const* items = sObjectMgr->GetNpcVendorItemList(entry))
                 for (VendorItem const* item : items->m_items)
-                    if (item)
+                    if (item && !item->ExtendedCost)    // for gold, not honor or tokens
                         sold.insert(item->item);
 
         for (uint8 cls = CLASS_WARRIOR; cls < MAX_CLASSES; ++cls)
@@ -382,23 +405,26 @@ namespace Legacy
         data->checkChallenges = true;
 
         uint32 guid = player->GetGUID().GetCounter();
+        data->hardcore = IsHardcore(guid);
         Build build = GetBuild(guid);
-        if (Spent(build))
+        // The build was fine when it was saved; the point cap, the challenges or hardcore (taken
+        // after the perks were picked) may have changed since. One that no longer fits is
+        // switched off, not deleted, so fixing a config or data mistake brings it back. With no
+        // challenges loaded at all (the world SQL is missing), nothing is judged.
+        if (Spent(build) && ChallengeCount())
         {
-            // The build was fine when it was saved; the point cap, the challenges or hardcore
-            // (taken after the perks were picked) may have changed since.
-            uint32 points = SpendablePoints(GetEarned(player->GetSession()->GetAccountId()), IsHardcore(guid));
+            uint32 points = SpendablePoints(GetEarned(player->GetSession()->GetAccountId()), data->hardcore);
             auto [code, message] = Validate(build, points);
             if (!code.empty())
             {
-                SetBuild(guid, Build{});
-                ChatHandler(player->GetSession()).PSendSysMessage("|cffe6cc80Legacy:|r your perks were reset ({}). Pick them again in the launcher.", message);
+                SuspendBuild(guid);
+                ChatHandler(player->GetSession()).PSendSysMessage("|cffe6cc80Legacy:|r your perks are switched off: {} Change them on the launcher's LEGACY page.", message);
             }
         }
 
         RefreshPerks(player);
         if (Rank(player, PERK_DEDICATED_STUDY))
-            DedicatedStudy(player);
+            DedicatedStudy(player, data);
     }
 }
 
@@ -418,6 +444,7 @@ public:
         PLAYERHOOK_ON_PLAYER_RELEASED_GHOST,
         PLAYERHOOK_ON_PLAYER_RESURRECT,
         PLAYERHOOK_ON_CREATURE_KILL,
+        PLAYERHOOK_ON_CREATURE_KILLED_BY_PET,
         PLAYERHOOK_ON_SPELL_CAST,
         PLAYERHOOK_ON_GIVE_REPUTATION,
         PLAYERHOOK_ON_VICTIM_REWARD_AFTER,
@@ -434,11 +461,15 @@ public:
         PLAYERHOOK_ON_GAIN_REST_BONUS,
         PLAYERHOOK_ON_GET_REST_BONUS_MAX,
 #endif
+#ifdef LEGACY_CORE_HAS_TAXI_COST
+        PLAYERHOOK_ON_TAXI_COST_DISCOUNT,
+#endif
     }) { }
 
     void OnPlayerLogin(Player* player) override
     {
-        if (!GetConfig().enabled)
+        // Bots log in by the thousand; their accounts earn and spend nothing.
+        if (!GetConfig().enabled || IsBotSession(player->GetSession()))
             return;
         BackfillAccount(player->GetSession()->GetAccountId());
         OnLogin(player);
@@ -480,16 +511,38 @@ public:
             }
         }
 
-        // The Quick and the Dead: costs taken since the last update.
+        // The Quick and the Dead: what the casts since the last update really took. A cast that
+        // failed after the hook took nothing and gets nothing back.
         for (uint8 power = 0; power < MAX_POWERS; ++power)
-            if (uint32 amount = data->refund[power])
+            if (uint32 cost = data->cost[power])
             {
-                data->refund[power] = 0;
-                player->ModifyPower(Powers(power), int32(amount));
+                data->cost[power] = 0;
+                int32 taken = data->powerBefore[power] - int32(player->GetPower(Powers(power)));
+                if (taken > 0)
+                    player->ModifyPower(Powers(power), int32(std::min<uint32>(cost, uint32(taken))));
             }
 
+        // Reinforce, once the resurrection (and the spirit healer's loss) is done.
+        if (data->restore)
+        {
+            data->restore = false;
+            std::vector<std::pair<ObjectGuid, uint32>> before;
+            before.swap(data->snapshot);
+            if (uint32 pct = Percent(player, PERK_REINFORCE))
+                for (auto const& [itemGuid, durability] : before)
+                {
+                    Item* item = player->GetItemByGuid(itemGuid);
+                    if (!item)
+                        continue;
+                    uint32 now = item->GetUInt32Value(ITEM_FIELD_DURABILITY);
+                    if (now < durability)
+                        if (int32 back = int32((durability - now) * pct / 100))
+                            player->DurabilityPointsLoss(item, -back);
+                }
+        }
+
         // Reinforce: a killing blow the player survived (a duel) leaves a snapshot behind.
-        if (!data->snapshot.empty() && player->IsAlive() && GameTime::GetGameTime() - data->snapshotAt > SNAPSHOT_STALE)
+        else if (!data->snapshot.empty() && player->IsAlive() && GameTime::GetGameTime() - data->snapshotAt > SNAPSHOT_STALE)
             data->snapshot.clear();
 
         if (data->challengeTimer > diff)
@@ -511,7 +564,10 @@ public:
         if (data->checkChallenges)
         {
             data->checkChallenges = false;
-            CheckChallenges(player);
+            CheckChallenges(player, data->hardcore);
+            // The same 30-second beat catches the daily reset for Dedicated Study.
+            if (Rank(player, PERK_DEDICATED_STUDY) && player->IsInWorld())
+                DedicatedStudy(player, data);
         }
     }
 
@@ -524,7 +580,12 @@ public:
     // Challenges: checked at the next refresh after anything they look at changes.
     void OnPlayerLevelChanged(Player* player, uint8 /*oldLevel*/) override
     {
-        DataOf(player)->checkChallenges = true;
+        if (!GetConfig().enabled || IsBotSession(player->GetSession()))
+            return;
+        PerkData* data = DataOf(player);
+        data->checkChallenges = true;
+        // Hardcore is taken at the starting level, so a level-up is when it's worth asking again.
+        data->hardcore = IsHardcore(player->GetGUID().GetCounter());
     }
 
     void OnPlayerAchievementComplete(Player* player, AchievementEntry const* /*achievement*/) override
@@ -571,6 +632,9 @@ public:
 
         player->RemoveAurasDueToSpell(SPELL_QUICK_AND_DEAD);
         PerkData* data = DataOf(player);
+        // A death ends Hardcore.
+        if (data->hardcore)
+            data->hardcore = IsHardcore(player->GetGUID().GetCounter());
 
         // Second Wind
         if (uint8 rank = Rank(player, PERK_SECOND_WIND))
@@ -582,29 +646,26 @@ public:
         }
 
         // The Quick and the Dead
-        if (Rank(player, PERK_QUICK_AND_DEAD) >= 2)
+        if (Rank(player, PERK_QUICK_AND_DEAD) >= 2 && !InPvp(player))
             data->freeUntil = GameTime::GetGameTime() + QUICK_AND_DEAD_WINDOW;
 
-        // Reinforce
-        std::vector<std::pair<ObjectGuid, uint32>> before;
-        before.swap(data->snapshot);
-        if (uint32 pct = Percent(player, PERK_REINFORCE))
-        {
-            for (auto const& [itemGuid, durability] : before)
-            {
-                Item* item = player->GetItemByGuid(itemGuid);
-                if (!item)
-                    continue;
-                uint32 now = item->GetUInt32Value(ITEM_FIELD_DURABILITY);
-                if (now < durability)
-                    if (int32 back = int32((durability - now) * pct / 100))
-                        player->DurabilityPointsLoss(item, -back);
-            }
-        }
+        // Reinforce: the spirit healer takes its share after this hook, so the update after does it.
+        if (!data->snapshot.empty())
+            data->restore = true;
     }
 
-    // Thrill of Adventure
+    // Thrill of Adventure, for the player's own kills and their pet's or totem's.
     void OnPlayerCreatureKill(Player* player, Creature* killed) override
+    {
+        Thrill(player, killed);
+    }
+
+    void OnPlayerCreatureKilledByPet(Player* owner, Creature* killed) override
+    {
+        Thrill(owner, killed);
+    }
+
+    static void Thrill(Player* player, Creature* killed)
     {
         uint8 rank = Rank(player, PERK_THRILL_OF_ADVENTURE);
         if (!rank || !killed || InInstance(player) || !Acore::XP::Gain(player, killed))
@@ -626,7 +687,9 @@ public:
         SpellInfo const* info = spell->GetSpellInfo();
         if (!info->IsPositive() || info->PowerType >= MAX_POWERS)
             return;
-        data->refund[info->PowerType] += uint32(spell->GetPowerCost());
+        if (!data->cost[info->PowerType])
+            data->powerBefore[info->PowerType] = int32(player->GetPower(Powers(info->PowerType)));
+        data->cost[info->PowerType] += uint32(spell->GetPowerCost());
     }
 
     // Diplomat
@@ -658,7 +721,7 @@ public:
 
     void OnPlayerUpdateGatheringSkill(Player* player, uint32 skillId, uint32 current, uint32 gray, uint32 /*green*/, uint32 /*yellow*/, uint32& gain) override
     {
-        if (!gain || current >= gray)
+        if (!gain || current >= gray || skillId == SKILL_LOCKPICKING)
             return;
         if (uint32 pct = Percent(player, PERK_WORKING_OVERTIME))
             if (roll_chance_i(int32(pct)))
@@ -712,10 +775,22 @@ public:
         if (creature->HasNpcFlag(UNIT_NPC_FLAG_VENDOR))
             if (uint32 pct = Percent(player, PERK_BARTERING))
                 discount *= 1.0f - pct / 100.0f;
+#ifndef LEGACY_CORE_HAS_TAXI_COST
+        // Without the taxi cost hook only the flight master's own price, the first leg.
         if (creature->HasNpcFlag(UNIT_NPC_FLAG_FLIGHTMASTER))
             if (uint32 pct = Percent(player, PERK_FREQUENT_FLIER))
                 discount *= 1.0f - pct / 100.0f;
+#endif
     }
+
+#ifdef LEGACY_CORE_HAS_TAXI_COST
+    // Frequent Flier: every leg of the flight.
+    void OnPlayerTaxiCostDiscount(Player* player, float& discount) override
+    {
+        if (uint32 pct = Percent(player, PERK_FREQUENT_FLIER))
+            discount *= 1.0f - pct / 100.0f;
+    }
+#endif
 
     void OnPlayerDeleteFromDB(CharacterDatabaseTransaction trans, uint32 guid) override
     {

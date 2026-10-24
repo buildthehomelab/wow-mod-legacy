@@ -113,6 +113,10 @@ namespace Legacy
     Build GetBuild(uint32 guid);
     uint8 Rank(Player const* player, Perk perk);
     void SetBuild(uint32 guid, Build const& build);
+    // Switches a saved build off until it is changed in the launcher (it no longer fits the
+    // character's points); the rows stay, so a config or data mistake loses nothing.
+    void SuspendBuild(uint32 guid);
+    bool IsSuspended(uint32 guid);
     void ForgetCharacter(uint32 guid);
     uint32 Spent(Build const& build);
     uint32 SpentInTree(Build const& build, Tree tree);
@@ -133,8 +137,10 @@ namespace Legacy
     bool IsHardcore(uint32 guid);
     bool HardcoreTracked();
 
-    // Checks an online player for challenges done, from their own map update.
-    void CheckChallenges(Player* player);
+    // Checks an online player for challenges done, from their own map update. `hardcore` is the
+    // player's cached hardcore state.
+    void CheckChallenges(Player* player, bool hardcore);
+    size_t ChallengeCount();
     // Checks every character of an account from the database (offline progress, and everything
     // done before the module was installed). World thread only.
     void BackfillAccount(uint32 account);
