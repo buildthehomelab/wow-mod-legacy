@@ -325,6 +325,13 @@ namespace Legacy
 {
     void RefreshPerks(Player* player)
     {
+        // Every logout runs Unit::CleanupBeforeRemoveFromMap: it takes the player out of the
+        // world, removes all auras, locks the aura list and then calls CombatStop, which fires
+        // OnPlayerLeaveCombat. Adding an aura after that lock is a core ASSERT (a server crash),
+        // so nothing is refreshed for a player who is not in the world.
+        if (!player->IsInWorld())
+            return;
+
         bool pvp = InPvp(player);
         bool alive = player->IsAlive() && !player->HasPlayerFlag(PLAYER_FLAGS_GHOST);
 
@@ -573,7 +580,7 @@ public:
 
     void OnPlayerMapChanged(Player* player) override
     {
-        if (GetConfig().enabled)
+        if (GetConfig().enabled && !IsBotSession(player->GetSession()))
             RefreshPerks(player);
     }
 
@@ -612,16 +619,17 @@ public:
         player->RemoveAurasDueToSpell(SPELL_EXPLORERS_STRIDE);
     }
 
+    // Also fires on every logout, after the player has left the world (see RefreshPerks).
     void OnPlayerLeaveCombat(Player* player) override
     {
-        if (GetConfig().enabled)
+        if (GetConfig().enabled && !IsBotSession(player->GetSession()))
             RefreshPerks(player);
     }
 
     // The Quick and the Dead: ghost speed.
     void OnPlayerReleasedGhost(Player* player) override
     {
-        if (GetConfig().enabled)
+        if (GetConfig().enabled && !IsBotSession(player->GetSession()))
             RefreshPerks(player);
     }
 
