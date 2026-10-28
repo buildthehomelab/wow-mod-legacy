@@ -16,9 +16,12 @@
 #include "Player.h"
 #include "ReputationMgr.h"
 #include "ScriptMgr.h"
+#include "SpellInfo.h"
+#include "SpellMgr.h"
 #include "StringConvert.h"
 #include "Tokenize.h"
 #include "WorldSession.h"
+#include <algorithm>
 #include <map>
 #include <mutex>
 #include <shared_mutex>
@@ -120,6 +123,123 @@ namespace
         std::vector<uint32> list;
     };
 
+    struct ProfessionDefinition
+    {
+        uint32 SkillId;
+        std::string_view Name;
+        std::array<uint32, 6> RankSpells;
+    };
+
+    constexpr std::array<ProfessionDefinition, 11> PrimaryProfessionDefinitions =
+    {{
+        { SKILL_ALCHEMY,       "alchemy",       { 2259, 3101, 3464, 11611, 28596, 51304 } },
+        { SKILL_BLACKSMITHING, "blacksmithing", { 2018, 3100, 3538, 9785, 29844, 51300 } },
+        { SKILL_ENCHANTING,   "enchanting",    { 7411, 7412, 7413, 13920, 28029, 51313 } },
+        { SKILL_ENGINEERING,  "engineering",   { 4036, 4037, 4038, 12656, 30350, 51306 } },
+        { SKILL_HERBALISM,    "herbalism",     { 2366, 2368, 3570, 11993, 28695, 50300 } },
+        { SKILL_INSCRIPTION,  "inscription",   { 45357, 45358, 45359, 45360, 45361, 45363 } },
+        { SKILL_JEWELCRAFTING,"jewelcrafting", { 25229, 25230, 28894, 28895, 28897, 51311 } },
+        { SKILL_LEATHERWORKING,"leatherworking",{ 2108, 3104, 3811, 10662, 32549, 51302 } },
+        { SKILL_MINING,       "mining",        { 2575, 2576, 3564, 10248, 29354, 50310 } },
+        { SKILL_SKINNING,     "skinning",      { 8613, 8617, 8618, 10768, 32678, 50305 } },
+        { SKILL_TAILORING,    "tailoring",     { 3908, 3909, 3910, 12180, 26790, 51309 } },
+    }};
+
+    constexpr std::array<ProfessionDefinition, 3> SecondaryProfessionDefinitions =
+    {{
+        { SKILL_COOKING,   "cooking",  { 2550, 3102, 3413, 18260, 33359, 51296 } },
+        { SKILL_FIRST_AID, "firstaid", { 3273, 3274, 7924, 10846, 27028, 45542 } },
+        { SKILL_FISHING,   "fishing",  { 7620, 7731, 7732, 18248, 33095, 51294 } },
+    }};
+
+    ProfessionDefinition const* GetProfessionDefinition(uint32 skillId)
+    {
+        for (ProfessionDefinition const& profession : PrimaryProfessionDefinitions)
+            if (profession.SkillId == skillId)
+                return &profession;
+
+        for (ProfessionDefinition const& profession : SecondaryProfessionDefinitions)
+            if (profession.SkillId == skillId)
+                return &profession;
+
+        return nullptr;
+    }
+
+    uint32 GetBestRankSpellForSkill(uint32 skillId, uint16 maxValue)
+    {
+        ProfessionDefinition const* profession = GetProfessionDefinition(skillId);
+        if (!profession)
+            return 0;
+
+        uint32 rankIndex = 0;
+        if (maxValue > 375)
+            rankIndex = 5;
+        else if (maxValue > 300)
+            rankIndex = 4;
+        else if (maxValue > 225)
+            rankIndex = 3;
+        else if (maxValue > 150)
+            rankIndex = 2;
+        else if (maxValue > 75)
+            rankIndex = 1;
+
+        return profession->RankSpells[rankIndex];
+    }
+
+    bool IsProfessionRankSpell(uint32 spellId)
+    {
+        for (auto const& profession : PrimaryProfessionDefinitions)
+            if (std::find(profession.RankSpells.begin(), profession.RankSpells.end(), spellId) != profession.RankSpells.end())
+                return true;
+        for (auto const& profession : SecondaryProfessionDefinitions)
+            if (std::find(profession.RankSpells.begin(), profession.RankSpells.end(), spellId) != profession.RankSpells.end())
+                return true;
+        return false;
+    }
+
+    // Protected by challengeLock together with the loaded challenge definitions.
+    std::unordered_map<uint32, uint8> ProfessionTrainerLevels;
+
+    std::unordered_map<uint32, uint8> LoadProfessionTrainerLevels()
+    {
+        std::unordered_map<uint32, uint8> levels;
+        if (QueryResult result = WorldDatabase.Query("SELECT SpellId, MIN(ReqLevel) FROM trainer_spell GROUP BY SpellId"))
+        {
+            auto record = [&levels](uint32 spellId, uint8 level)
+            {
+                if (!IsProfessionRankSpell(spellId))
+                    return;
+                auto [itr, inserted] = levels.emplace(spellId, level);
+                if (!inserted)
+                    itr->second = std::min(itr->second, level);
+            };
+            do
+            {
+                Field* fields = result->Fetch();
+                uint32 spellId = fields[0].Get<uint32>();
+                uint8 level = fields[1].Get<uint8>();
+                record(spellId, level);
+                // Trainers may cast a wrapper which teaches the actual rank spell.
+                if (SpellInfo const* spell = sSpellMgr->GetSpellInfo(spellId))
+                    for (SpellEffectInfo const& effect : spell->Effects)
+                        if (effect.Effect == SPELL_EFFECT_LEARN_SPELL)
+                            record(effect.TriggerSpell, level);
+            } while (result->NextRow());
+        }
+        return levels;
+    }
+
+    bool MeetsHardcoreProfessionLevel(Challenge const& challenge, uint8 level)
+    {
+        if (challenge.type != CHALLENGE_SKILL || !GetProfessionDefinition(challenge.value1))
+            return true;
+        if (challenge.value2 > 450)
+            return false;
+        uint32 spellId = GetBestRankSpellForSkill(challenge.value1, uint16(challenge.value2));
+        auto itr = ProfessionTrainerLevels.find(spellId);
+        return itr != ProfessionTrainerLevels.end() && level >= itr->second;
+    }
+
     struct Done
     {
         uint32 guid = 0;
@@ -217,7 +337,7 @@ namespace
 
     // Records what `guid` did. Returns the challenges that were new for the account (or new for
     // its hardcore points).
-    std::vector<Fresh> Record(uint32 account, uint32 guid, bool hardcore, std::vector<Challenge const*> const& met)
+    std::vector<Fresh> Record(uint32 account, uint32 guid, bool hardcore, uint8 level, std::vector<Challenge const*> const& met)
     {
         std::vector<Fresh> fresh;
         uint32 now = uint32(GameTime::GetGameTime().count());
@@ -229,7 +349,8 @@ namespace
         {
             auto itr = done.find(challenge->id);
             bool isNew = itr == done.end();
-            bool newHardcore = hardcore && (isNew || !itr->second.hardcoreGuid);
+            bool newHardcore = hardcore && MeetsHardcoreProfessionLevel(*challenge, level)
+                && (isNew || !itr->second.hardcoreGuid);
             if (!isNew && !newHardcore)
                 continue;
 
@@ -530,7 +651,7 @@ namespace Legacy
             std::vector<Challenge const*> met = Unmet(account, hardcore, progress);
             if (met.empty())
                 return;
-            fresh = Record(account, guid, hardcore, met);
+            fresh = Record(account, guid, hardcore, progress.level, met);
         }
 
         if (fresh.empty() || !config.announce)
@@ -626,12 +747,13 @@ namespace Legacy
             bool isHardcore = hardcore.count(guid);
             std::vector<Challenge const*> met = Unmet(account, isHardcore, progress);
             if (!met.empty())
-                Record(account, guid, isHardcore, met);
+                Record(account, guid, isHardcore, progress.level, met);
         }
     }
 
     void LoadChallenges()
     {
+        auto trainerLevels = LoadProfessionTrainerLevels();
         std::vector<Challenge> loaded;
         Watched watching;
         uint32 skipped = 0;
@@ -696,6 +818,7 @@ namespace Legacy
         }
 
         std::unique_lock<std::shared_mutex> guard(challengeLock);
+        ProfessionTrainerLevels = std::move(trainerLevels);
         challenges = std::move(loaded);
         watched = std::move(watching);
         LOG_INFO("module", "mod-legacy: {} challenges loaded ({} skipped).", challenges.size(), skipped);

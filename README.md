@@ -192,3 +192,22 @@ Run `data/sql/uninstall/mod_legacy_uninstall_world.sql` on the world database an
 ## License
 
 Released under the [MIT License](LICENSE).
+
+### Hardcore profession challenge credit
+
+Account-wide profession synchronization can give a new Hardcore character high
+skill values immediately. Hardcore credit for Legacy's profession challenges
+waits until the character reaches the trainer level for the rank needed by that
+challenge's skill threshold. Ordinary Legacy credit remains based on the existing
+skill requirement. Standard WoW achievements, other Legacy challenges, shared
+profession skills and recipes are unchanged.
+
+The same check applies to online progression and offline account backfill. Each
+profession's rank requirements come from `trainer_spell.ReqLevel`, including
+learn-spell wrappers, when challenges load. Reload the Legacy data or restart
+after changing trainer requirements. A missing trainer rank withholds its Hardcore
+credit. Previously recorded credit is retained; no SQL migration is included.
+
+Run `python3 tests/test_hardcore_professions.py` for focused production-code
+regressions covering rank boundaries, normal versus Hardcore credit, delayed
+credit, different trainer levels and missing trainer data.
