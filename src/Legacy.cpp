@@ -39,6 +39,7 @@ namespace
         { TREE_ADVENTURE,       "adventure",       "Adventure",       "inv_misc_map_01" },
         { TREE_RESOURCEFULNESS, "resourcefulness", "Resourcefulness", "inv_misc_bag_08" },
         { TREE_PROFESSIONS,     "professions",     "Professions",     "trade_engineering" },
+        { TREE_GENERAL,         "general",         "General",         "inv_misc_bag_19" },
     }};
 
     // Rows unlock at 0, 5 and 10 points in the rest of the tree, like WoW Forever's trees. Five of
@@ -91,6 +92,9 @@ namespace
             "A chance of one more material when you disenchant, prospect or mill." },
         { PERK_DEDICATED_STUDY, "dedicated_study", TREE_PROFESSIONS, "Dedicated Study", "inv_misc_book_09", 1, 2, 1, 10, NO_PERK, 1,
             "Once a day, your lowest profession (primary or secondary) that isn't at its maximum gains 1 skill." },
+
+        { PERK_DEEP_POCKETS, "deep_pockets", TREE_GENERAL, "Deep Pockets", "inv_misc_bag_felclothbag", 5, 0, 0, 0, NO_PERK, 2,
+            "The bags in your four bag slots hold more. Permanent: a saved rank can't be taken back." },
     }};
 
     // Second Wind and Gourmand go in thirds.
@@ -483,9 +487,21 @@ namespace Legacy
                 return Acore::StringFormat("A {}% chance of one more material when you disenchant, prospect or mill.", value);
             case PERK_DEDICATED_STUDY:
                 return "Once a day, your lowest profession (primary or secondary) that isn't at its maximum gains 1 skill. Once all of them are, it does nothing.";
+            case PERK_DEEP_POCKETS:
+                return Acore::StringFormat("Each bag in your four bag slots has {} more slots (36 at most). Permanent: once saved, this rank can't be taken back.", value);
             default:
                 return perk.description;
         }
+    }
+
+    bool Offered(PerkInfo const& perk)
+    {
+        return perk.perk != PERK_DEEP_POCKETS || config.deepPockets;
+    }
+
+    bool Permanent(Perk perk)
+    {
+        return perk == PERK_DEEP_POCKETS;
     }
 
     Build GetBuild(uint32 guid)
@@ -503,6 +519,13 @@ namespace Legacy
         std::shared_lock<std::shared_mutex> guard(buildLock);
         auto itr = builds.find(guid);
         return itr != builds.end() && !suspended.count(guid) ? itr->second[perk] : 0;
+    }
+
+    uint8 SavedRank(uint32 guid, Perk perk)
+    {
+        std::shared_lock<std::shared_mutex> guard(buildLock);
+        auto itr = builds.find(guid);
+        return itr != builds.end() ? itr->second[perk] : 0;
     }
 
     void SetBuild(uint32 guid, Build const& build)
@@ -952,6 +975,7 @@ public:
         config.pointCap = sConfigMgr->GetOption<uint32>("Legacy.PointCap", 16);
         config.hardcorePool = sConfigMgr->GetOption<bool>("Legacy.Hardcore.SeparatePoints", true);
         config.announce = sConfigMgr->GetOption<bool>("Legacy.AnnounceChallenges", true);
+        config.deepPockets = sConfigMgr->GetOption<bool>("Legacy.DeepPockets.Enable", false);
     }
 
     void OnStartup() override

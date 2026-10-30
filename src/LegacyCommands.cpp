@@ -4,12 +4,14 @@
  * `.legacy list <account>` and `.legacy set <account> <guid> <ranks>` are for the portal, which
  * runs them over SOAP for the launcher's LEGACY page. Each answers one line of JSON. They are
  * SEC_CONSOLE: no account in the game is that high, so only the console and SOAP run them.
- * `.legacy show` tells a player their points and perks; `.legacy reload` reloads the challenges.
+ * `.legacy show` tells a player their points and perks; `.legacy reload` reloads the challenges;
+ * `.legacy bagprobe` checks the client draws Deep Pockets' extra bag slots.
  *
  * Released under the MIT License.
  */
 
 #include "Legacy.h"
+#include "Bag.h"
 #include "Chat.h"
 #include "ChatCommand.h"
 #include "DatabaseEnv.h"
@@ -19,6 +21,7 @@
 #include "StringConvert.h"
 #include "Tokenize.h"
 #include "WorldSession.h"
+#include <algorithm>
 #include <unordered_set>
 
 using namespace Acore::ChatCommands;
@@ -93,25 +96,30 @@ namespace
             c.hardcore ? "true" : "false", SpendablePoints(earned, c.hardcore), Spent(build), ranks);
     }
 
+    // The General tree is a "strip": one row drawn above the three trees. A tree with no perk
+    // offered (Deep Pockets switched off) isn't listed.
     std::string TreesJson()
     {
         std::string json = "[";
         for (TreeInfo const& tree : Trees())
         {
-            json += Acore::StringFormat("{}{{\"id\":\"{}\",\"name\":{},\"icon\":\"{}\",\"perks\":[", tree.tree ? "," : "", tree.key, JsonString(tree.name), tree.icon);
+            if (std::none_of(Perks().begin(), Perks().end(), [&](PerkInfo const& perk) { return perk.tree == tree.tree && Offered(perk); }))
+                continue;
+            json += Acore::StringFormat("{}{{\"id\":\"{}\",\"name\":{},\"icon\":\"{}\",\"strip\":{},\"perks\":[", json.size() > 1 ? "," : "",
+                tree.key, JsonString(tree.name), tree.icon, tree.tree == TREE_GENERAL ? "true" : "false");
             bool first = true;
             for (PerkInfo const& perk : Perks())
             {
-                if (perk.tree != tree.tree)
+                if (perk.tree != tree.tree || !Offered(perk))
                     continue;
                 std::string ranks;
                 for (uint8 rank = 1; rank <= perk.maxRank; ++rank)
                     ranks += (rank > 1 ? "," : "") + JsonString(RankText(perk, rank));
                 json += Acore::StringFormat("{}{{\"id\":\"{}\",\"name\":{},\"icon\":\"{}\",\"maxRank\":{},\"row\":{},\"column\":{},"
-                    "\"requiresTreePoints\":{},\"requiresPerk\":\"{}\",\"description\":{},\"ranks\":[{}]}}",
+                    "\"requiresTreePoints\":{},\"requiresPerk\":\"{}\",\"permanent\":{},\"description\":{},\"ranks\":[{}]}}",
                     first ? "" : ",", perk.key, JsonString(perk.name), perk.icon, perk.maxRank, perk.row, perk.column,
                     perk.requiresTreePoints, perk.requiresPerk == NO_PERK ? "" : Perks()[perk.requiresPerk].key,
-                    JsonString(perk.description), ranks);
+                    Permanent(perk.perk) ? "true" : "false", JsonString(perk.description), ranks);
                 first = false;
             }
             json += "]}";
@@ -170,6 +178,7 @@ public:
             { "set",    HandleSetCommand,    SEC_CONSOLE,       Console::Yes },
             { "show",   HandleShowCommand,   SEC_PLAYER,        Console::No  },
             { "reload", HandleReloadCommand, SEC_ADMINISTRATOR, Console::Yes },
+            { "bagprobe", HandleBagProbeCommand, SEC_GAMEMASTER, Console::No },
         };
 
         static ChatCommandTable commandTable =
@@ -216,6 +225,17 @@ public:
         if (character.online && character.online->IsInCombat())
             return Refuse(handler, "combat", Acore::StringFormat("{} is in combat. Try again once the fight is over.", character.name));
 
+        // A perk the realm doesn't offer keeps whatever it has; a permanent one only goes up.
+        Build saved = GetBuild(guid);
+        for (PerkInfo const& perk : Perks())
+        {
+            if (!Offered(perk) && build[perk.perk] != saved[perk.perk])
+                return Refuse(handler, "invalid", Acore::StringFormat("{} isn't on this realm right now.", perk.name));
+            if (Permanent(perk.perk) && build[perk.perk] < saved[perk.perk])
+                return Refuse(handler, "locked", Acore::StringFormat("{} is permanent: the {} rank{} saved can't be taken back.",
+                    perk.name, saved[perk.perk], saved[perk.perk] > 1 ? "s" : ""));
+        }
+
         BackfillAccount(account);
         Earned earned = GetEarned(account);
         auto [code, message] = Validate(build, SpendablePoints(earned, character.hardcore));
@@ -227,6 +247,7 @@ public:
         if (Player* player = character.online)
         {
             RefreshPerks(player);
+            UpdateBags(player);
             ChatHandler(player->GetSession()).PSendSysMessage("|cffe6cc80Legacy:|r your perks were changed in the launcher ({} of {} points spent).",
                 Spent(build), SpendablePoints(earned, character.hardcore));
         }
@@ -260,6 +281,25 @@ public:
                     handler->PSendSysMessage("  {}: {} {}/{}: {}", tree.name, perk.name, build[perk.perk], perk.maxRank, RankText(perk, build[perk.perk]));
         if (!Spent(build))
             handler->SendSysMessage("  No perks yet. Pick them on the LEGACY page of the launcher.");
+        return true;
+    }
+
+    // Deep Pockets is off until this shows the 3.3.5 client draws the extra slots: it gives the
+    // GM's own bags in the four bag slots `extra` more slots (0 puts them back) until a bag is
+    // moved or the perk is saved.
+    static bool HandleBagProbeCommand(ChatHandler* handler, Optional<uint8> extra)
+    {
+        Player* player = handler->GetPlayer();
+        if (!player)
+            return false;
+        uint32 slots = std::min<uint32>(extra.value_or(4), MAX_BAG_SIZE);
+        UpdateBags(player, slots);
+        for (uint8 bagSlot = INVENTORY_SLOT_BAG_START; bagSlot < INVENTORY_SLOT_BAG_END; ++bagSlot)
+            if (Bag* bag = player->GetBagByPos(bagSlot))
+                handler->PSendSysMessage("  bag {}: {} slots ({} without the probe)", bagSlot - INVENTORY_SLOT_BAG_START + 1,
+                    bag->GetBagSize(), bag->GetTemplate()->ContainerSlots);
+        handler->SendSysMessage("Open your bags: the extra slots work if the bag windows show them and an item can go in one. "
+            "Take the items out of them before you log out, or they come back by mail.");
         return true;
     }
 

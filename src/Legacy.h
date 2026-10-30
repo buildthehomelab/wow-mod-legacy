@@ -3,9 +3,10 @@
  *
  * Challenges done anywhere on an account (a class reaching a level, a profession reaching a
  * skill, a raid's achievement, ...) earn it Legacy points, one each. Every character spends up to
- * Legacy.PointCap of them on perks in three trees: Adventure, Resourcefulness and Professions.
- * None of the perks adds combat power. Perks are picked in the launcher, which reaches the module
- * through the portal over SOAP (`.legacy list` / `.legacy set`).
+ * Legacy.PointCap of them on perks in three trees: Adventure, Resourcefulness and Professions,
+ * and a General row above them (Deep Pockets). None of the perks adds combat power. Perks are
+ * picked in the launcher, which reaches the module through the portal over SOAP (`.legacy list` /
+ * `.legacy set`).
  *
  * Hardcore characters (mod-challenges) spend only the points hardcore characters earned; normal
  * characters spend everything the account earned.
@@ -17,6 +18,7 @@
 #define MOD_LEGACY_H
 
 #include "Define.h"
+#include "Optional.h"
 #include <array>
 #include <string>
 #include <string_view>
@@ -33,6 +35,7 @@ namespace Legacy
         TREE_ADVENTURE,
         TREE_RESOURCEFULNESS,
         TREE_PROFESSIONS,
+        TREE_GENERAL,           // one row above the trees, nothing needed in any tree
         MAX_TREES
     };
 
@@ -63,6 +66,8 @@ namespace Legacy
         PERK_BARTERING,
         PERK_SALVAGER,
         PERK_DEDICATED_STUDY,
+        // General
+        PERK_DEEP_POCKETS,
         MAX_PERKS
     };
 
@@ -98,6 +103,10 @@ namespace Legacy
     std::array<PerkInfo, MAX_PERKS> const& Perks();
     PerkInfo const* FindPerk(std::string_view key);
     std::string RankText(PerkInfo const& perk, uint8 rank);
+    // Whether the launcher lists the perk (Deep Pockets waits for Legacy.DeepPockets.Enable).
+    bool Offered(PerkInfo const& perk);
+    // A permanent perk's saved ranks can't be taken back.
+    bool Permanent(Perk perk);
 
     struct Config
     {
@@ -105,6 +114,7 @@ namespace Legacy
         uint32 pointCap = 16;
         bool hardcorePool = true;
         bool announce = true;
+        bool deepPockets = false;
     };
 
     Config const& GetConfig();
@@ -113,6 +123,8 @@ namespace Legacy
     // thread can read it; only the world thread writes it.
     Build GetBuild(uint32 guid);
     uint8 Rank(Player const* player, Perk perk);
+    // The saved rank, suspended or not (Deep Pockets: bags don't shrink with a suspended build).
+    uint8 SavedRank(uint32 guid, Perk perk);
     void SetBuild(uint32 guid, Build const& build);
     // Switches a saved build off until it is changed in the launcher (it no longer fits the
     // character's points); the rows stay, so a config or data mistake loses nothing.
@@ -179,6 +191,9 @@ namespace Legacy
 
     // Perks (LegacyPerks.cpp).
     void RefreshPerks(Player* player);
+    // Deep Pockets: sets the size of every bag the player has, with `extra` slots on the bags in
+    // the four bag slots (the perk's, when not given).
+    void UpdateBags(Player* player, Optional<uint32> extra = std::nullopt);
     void LoadReagentMasks();
     void OnLogin(Player* player);
 }

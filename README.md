@@ -40,6 +40,24 @@ is in combat.
 Ranks cost one point each. A perk in the second row needs 5 points in the rest of its tree first,
 and a perk in the third row needs 10. Some perks also need every rank of the perk above them.
 
+### General
+
+One row above the three trees, with nothing needed in any tree. Off until
+`Legacy.DeepPockets.Enable = 1`.
+
+| Perk | Ranks | Per rank |
+|---|---|---|
+| Deep Pockets | 5 | Each bag in your four bag slots has 2 more slots (36 at most). **Permanent**: a saved rank can't be taken back, and it stays when the rest of the build is switched off. |
+
+The backpack itself stays at 16: unlike a bag, it has no size the server can change.
+How it works: a bag's size is a value on the bag that the server sends to the client. The core
+equips a character's bags at login before it loads what's in them, so the extra slots are there
+in time for the items saved in them. A bag gets its own size back once it leaves the four bag
+slots. A bag with items in its extra slots can't be moved until they're taken out: in a bank bag
+slot it would lose those slots at the next login. With the perk switched off, a bag keeps its
+extra slots only while items are in them, and at the next login the core mails those items
+back ("There were problems with equipping item(s).").
+
 ### Adventure
 
 | Perk | Ranks | Per rank |
@@ -132,6 +150,7 @@ own rows at 700 or above. Challenge types:
 | `.legacy list <account>` | console / SOAP | The account's characters, points, trees and challenges as one line of JSON. |
 | `.legacy set <account> <guid> <perk=rank,...>` | console / SOAP | Saves a character's whole build (`-` for none). |
 | `.legacy reload` | administrators | Reloads the challenges. |
+| `.legacy bagprobe [slots]` | game masters | Gives your bags in the four bag slots `slots` (4) more slots until a bag is moved; 0 puts them back. Checks that the client draws Deep Pockets' slots before `Legacy.DeepPockets.Enable` goes on. |
 
 ## Requirements
 
@@ -177,6 +196,8 @@ them:
 - **A player's perks "switched off" at login**: the build needs more points than the character
   has now (a lower `Legacy.PointCap`, challenges switched off, or Hardcore taken after picking).
   Changing the build in the launcher, or undoing the change, brings them back.
+- **Deep Pockets is missing from the launcher**: `Legacy.DeepPockets.Enable` is 0 (the default).
+  Try `.legacy bagprobe` first: if the bag windows don't show the extra slots, leave it off.
 - **Reagent Economy does nothing for a class**: the startup log lists, per class, how many spell
   ranks need only vendor reagents.
 
