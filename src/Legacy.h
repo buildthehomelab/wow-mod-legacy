@@ -4,7 +4,8 @@
  * Challenges done anywhere on an account (a class reaching a level, a profession reaching a
  * skill, a raid's achievement, ...) earn it Legacy points, one each. Every character spends up to
  * Legacy.PointCap of them on perks in three trees: Adventure, Resourcefulness and Professions,
- * and a General row above them (Deep Pockets). None of the perks adds combat power. Perks are
+ * and a General row above them (Deep Pockets). Only Talented and Prodigy add combat power, as
+ * talent points (mod-talent-per-level must be off: it would count them twice). Perks are
  * picked in the launcher, which reaches the module through the portal over SOAP (`.legacy list` /
  * `.legacy set`).
  *
@@ -50,6 +51,8 @@ namespace Legacy
         PERK_SECOND_WIND,
         PERK_FREQUENT_FLIER,
         PERK_SUMMONING_STONE,
+        PERK_TALENTED,
+        PERK_PRODIGY,
         // Resourcefulness
         PERK_FOR_GREAT_HONOR,
         PERK_GOURMAND,

@@ -7,7 +7,8 @@
  * build changed from the launcher.
  *
  * Changes from WoW Forever, for systems 3.3.5 or this realm doesn't have:
- * - Explorer's Stride replaces Talented (mod-talent-per-level gives a talent point every level).
+ * - Talented keeps WoW Forever's rule (an earlier start, the same total); Prodigy, after it, adds
+ *   points on top. Explorer's Stride is an extra perk of this realm's.
  * - Second Wind replaces Field Guide (no camps).
  * - Bountiful Harvest doubles a gather instead of adding Scarce materials.
  * - Salvager replaces Performance Bonus (no commerce crates).
@@ -27,6 +28,7 @@
  */
 
 #include "Legacy.h"
+#include "AreaDefines.h"
 #include "Bag.h"
 #include "Chat.h"
 #include "Creature.h"
@@ -490,6 +492,8 @@ namespace Legacy
             if (!code.empty())
             {
                 SuspendBuild(guid);
+                // The core counted talent points while loading the character, with the perks on.
+                player->InitTalentForLevel();
                 ChatHandler(player->GetSession()).PSendSysMessage("|cffe6cc80Legacy:|r your perks are switched off: {} Change them on the launcher's LEGACY page.", message);
             }
         }
@@ -508,6 +512,7 @@ public:
         PLAYERHOOK_ON_UPDATE,
         PLAYERHOOK_ON_MAP_CHANGED,
         PLAYERHOOK_ON_LEVEL_CHANGED,
+        PLAYERHOOK_ON_CALCULATE_TALENTS_POINTS,
         PLAYERHOOK_ON_ACHI_COMPLETE,
         PLAYERHOOK_ON_REPUTATION_RANK_CHANGE,
         PLAYERHOOK_ON_UPDATE_SKILL,
@@ -661,6 +666,30 @@ public:
         data->checkChallenges = true;
         // Hardcore is taken at the starting level, so a level-up is when it's worth asking again.
         data->hardcore = IsHardcore(player->GetGUID().GetCounter());
+    }
+
+    // Talented and Prodigy. The core counts a point a level from level 10, plus bonus points.
+    // Talented starts that a level earlier a rank, up to the same total at the top level (WoW
+    // Forever's rule); Prodigy adds a point a rank once points have started. Builds are loaded at
+    // startup, so the count made while a character loads already has them. Death Knights in Ebon
+    // Hold keep their quest-based count.
+    void OnPlayerCalculateTalentsPoints(Player const* player, uint32& talentPointsForLevel) override
+    {
+        if (!GetConfig().enabled || (player->IsClass(CLASS_DEATH_KNIGHT, CLASS_CONTEXT_TALENT_POINT_CALC) && player->GetMapId() == MAP_EBON_HOLD))
+            return;
+
+        uint8 talented = Rank(player, PERK_TALENTED);
+        uint8 prodigy = Rank(player, PERK_PRODIGY);
+        if (!talented && !prodigy)
+            return;
+
+        uint32 maxLevel = sWorld->getIntConfig(CONFIG_MAX_PLAYER_LEVEL);
+        uint32 level = std::min<uint32>(player->GetLevel(), maxLevel);
+        uint32 stock = level < 10 ? 0 : level - 9;
+        uint32 early = level + talented < 10 ? 0 : std::min<uint32>(level + talented - 9, maxLevel - 9);
+        if (!early)
+            return;
+        talentPointsForLevel += early - std::min(stock, early) + prodigy;
     }
 
     void OnPlayerAchievementComplete(Player* player, AchievementEntry const* /*achievement*/) override
