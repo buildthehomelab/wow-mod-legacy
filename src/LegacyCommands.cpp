@@ -298,7 +298,7 @@ public:
             if (Bag* bag = player->GetBagByPos(bagSlot))
                 handler->PSendSysMessage("  bag {}: {} slots ({} without the probe)", bagSlot - INVENTORY_SLOT_BAG_START + 1,
                     bag->GetBagSize(), bag->GetTemplate()->ContainerSlots);
-        handler->SendSysMessage("Open your bags: the extra slots work if the bag windows show them and an item can go in one. "
+        handler->SendSysMessage("Close and reopen your bags: the extra slots work if the bag windows show them and an item can go in one. "
             "Take the items out of them before you log out, or they come back by mail.");
         return true;
     }

@@ -50,7 +50,9 @@ One row above the three trees, with nothing needed in any tree. Off until
 | Deep Pockets | 5 | Each bag in your four bag slots has 2 more slots (36 at most). **Permanent**: a saved rank can't be taken back, and it stays when the rest of the build is switched off. |
 
 The backpack itself stays at 16: unlike a bag, it has no size the server can change.
-How it works: a bag's size is a value on the bag that the server sends to the client. The core
+How it works: a bag's size is a value on the bag that the server sends to the client. The 3.3.5
+client reads it only when it creates the bag, so a bag resized in play (the perk bought, a bag
+moved) is sent to the client again: close and reopen the bag windows to see it. The core
 equips a character's bags at login before it loads what's in them, so the extra slots are there
 in time for the items saved in them. A bag gets its own size back once it leaves the four bag
 slots. A bag with items in its extra slots can't be moved until they're taken out: in a bank bag
