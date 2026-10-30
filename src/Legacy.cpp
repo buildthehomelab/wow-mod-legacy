@@ -42,8 +42,8 @@ namespace
         { TREE_GENERAL,         "general",         "General",         "inv_misc_bag_19" },
     }};
 
-    // Rows unlock at 0, 5 and 10 points in the rest of the tree, like WoW Forever's trees. Five of
-    // Forever's perks don't fit 3.3.5 or this realm and are replaced (see the README).
+    // Rows unlock at 0, 5, 10 and 15 points in the rest of the tree, like WoW Forever's trees. Four
+    // of Forever's perks don't fit 3.3.5 or this realm and are replaced (see the README).
     std::array<PerkInfo, MAX_PERKS> const PERKS =
     {{
         { PERK_HIGH_ALERT, "high_alert", TREE_ADVENTURE, "High Alert", "spell_shadow_detectinvisibility", 2, 0, 0, 0, NO_PERK, 5,
@@ -62,6 +62,10 @@ namespace
             "Flight paths cost less and fly faster." },
         { PERK_SUMMONING_STONE, "summoning_stone", TREE_ADVENTURE, "Summoning Stone", "spell_shadow_twilight", 1, 2, 0, 10, NO_PERK, 0,
             "Raid Finder's Summon to Stone takes you to the raid's meeting stone from anywhere." },
+        { PERK_TALENTED, "talented", TREE_ADVENTURE, "Talented", "ability_marksmanship", 5, 2, 2, 10, PERK_WELL_RESTED, 1,
+            "You start earning talent points before level 10, up to the same total at the top level." },
+        { PERK_PRODIGY, "prodigy", TREE_ADVENTURE, "Prodigy", "spell_arcane_mindmastery", 9, 3, 2, 15, PERK_TALENTED, 1,
+            "You have more talent points once you start earning them." },
 
         { PERK_FOR_GREAT_HONOR, "for_great_honor", TREE_RESOURCEFULNESS, "For Great Honor", "inv_jewelry_trinketpvp_01", 5, 0, 0, 0, NO_PERK, 2,
             "You gain more honor from honorable kills." },
@@ -457,6 +461,10 @@ namespace Legacy
                 return "Flight paths cost 50% less, and you fly 20% faster.";
             case PERK_SUMMONING_STONE:
                 return "Raid Finder's Summon to Stone takes you to the raid's meeting stone from anywhere. Without it, you travel there yourself; the stone still gathers your raid's bots.";
+            case PERK_TALENTED:
+                return Acore::StringFormat("You start earning talent points at level {} instead of 10, up to the same total at the top level. Taking ranks back resets your talents if you have spent more points than you have left.", 10 - rank);
+            case PERK_PRODIGY:
+                return Acore::StringFormat("You have {} more talent point{} once you start earning them. Taking ranks back resets your talents if you have spent more points than you have left.", value, value == 1 ? "" : "s");
             case PERK_FOR_GREAT_HONOR:
                 return Acore::StringFormat("You gain {}% more honor from honorable kills.", value);
             case PERK_GOURMAND:

@@ -6,8 +6,8 @@ Forever's **Legacy** system.
 Challenges done anywhere on an account earn **Legacy points**, one each. A class reaching a level,
 a profession reaching a skill and a raid's achievement are all challenges. Every character spends
 up to 16 of those points on perks in three trees: **Adventure**, **Resourcefulness** and
-**Professions**. None of the perks adds combat power; they make levelling, travelling and
-professions easier.
+**Professions**. They make levelling, travelling and professions easier; only Talented and
+Prodigy add combat power, as talent points.
 
 Perks are picked on the LEGACY page of the
 [Portalkeeper launcher fork](https://github.com/buildthehomelab/wow-Portalkeeper). The launcher
@@ -74,6 +74,14 @@ back ("There were problems with equipping item(s).").
 | Second Wind | 3 | Resurrection Sickness 33% shorter; at rank 3, none at all. |
 | Frequent Flier | 1 | Flight paths cost 50% less, and you fly 20% faster. |
 | Summoning Stone | 1 | Raid Finder's Summon to Stone takes you to the raid's meeting stone from anywhere (mod-raid-finder reads this perk). Without it you travel there yourself; Gather Bots at the stone still brings your raid's bots. |
+| Talented | 5 | Talent points start one level earlier (level 5 at 5/5), up to the same total at the top level (71 at 80). Needs Well Rested 5/5. |
+| Prodigy | 9 | +1 talent point once talent points have started (80 at 80 with 9/9). Fourth row (15 points in Adventure); needs Talented 5/5. |
+
+Talented and Prodigy change the core's talent point count, so run them without
+mod-talent-per-level (or with `TalentPerLevel.Enable = 0`): it would add them on top of its own
+point a level. Death Knights in Ebon Hold keep the core's quest-based count. Taking ranks back
+recounts the character's talents at once; one that has spent more than it has left gets a free
+talent reset, like after a level-down. Bots have no perks and keep the core's count.
 
 ### Resourcefulness
 
@@ -101,11 +109,9 @@ back ("There were problems with equipping item(s).").
 
 ### Changes from WoW Forever
 
-Five of WoW Forever's perks rely on things 3.3.5 doesn't have, or that already exist on this
-server in another form:
+Four of WoW Forever's perks rely on things 3.3.5 doesn't have, or that already exist on this
+server in another form. Explorer's Stride and Prodigy are this realm's own additions to Adventure.
 
-- **Talented** → **Explorer's Stride**: mod-talent-per-level already gives a talent point every
-  level.
 - **Field Guide** → **Second Wind**: there are no camps.
 - **Bountiful Harvest** doubles a gather instead of adding "Scarce" materials.
 - **Performance Bonus** → **Salvager**: there are no commerce crates.
