@@ -194,15 +194,6 @@ namespace
         return true;
     }
 
-    // The 3.3.5 client reads a bag's size only when it creates the bag (CGContainer_C's
-    // constructor) and ignores later value updates, so a bag resized in the world is destroyed
-    // and created again for its owner. The create also sends the items inside it.
-    void ResendBag(Player* player, Bag* bag)
-    {
-        bag->DestroyForPlayer(player);
-        bag->SendUpdateToPlayer(player);
-    }
-
     // Whether a bag has an item past its own size (in Deep Pockets' slots).
     bool HoldsExtra(Bag const* bag)
     {
@@ -373,18 +364,16 @@ namespace Legacy
     void UpdateBags(Player* player, Optional<uint32> extra)
     {
         uint32 pockets = extra.value_or(PocketSlots(player));
-        // At login the bags aren't sent yet: they go out with the new size.
-        auto fit = [player](Bag* bag, uint32 slots)
-        {
-            if (FitBag(bag, slots) && player->IsInWorld())
-                ResendBag(player, bag);
-        };
-        auto fitInside = [&fit](Bag* bag)
+        // At login the bags aren't sent yet: they go out with the new size. In the world only the
+        // value changes: a stock 3.3.5 client keeps the size it read when it created the bag (and
+        // re-enables that bag if it's sent again), so it needs the launcher's Wow.exe edit (wow-server
+        // tools/client-patches/live_bag_slots.py) to see it before a relog.
+        auto fitInside = [](Bag* bag)
         {
             for (uint32 slot = 0; slot < bag->GetBagSize(); ++slot)
                 if (Item* item = bag->GetItemByPos(uint8(slot)))
                     if (Bag* inner = item->ToBag())
-                        fit(inner, 0);
+                        FitBag(inner, 0);
         };
         for (uint8 slot = INVENTORY_SLOT_BAG_START; slot < BANK_SLOT_BAG_END; ++slot)
         {
@@ -393,7 +382,7 @@ namespace Legacy
             if (!bag)
                 continue;
             bool worn = slot < INVENTORY_SLOT_BAG_END;
-            fit(bag, worn ? pockets : 0);
+            FitBag(bag, worn ? pockets : 0);
             if (worn || slot >= BANK_SLOT_BAG_START)
                 fitInside(bag);
         }

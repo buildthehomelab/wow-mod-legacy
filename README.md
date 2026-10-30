@@ -50,9 +50,11 @@ One row above the three trees, with nothing needed in any tree. Off until
 | Deep Pockets | 5 | Each bag in your four bag slots has 2 more slots (36 at most). **Permanent**: a saved rank can't be taken back, and it stays when the rest of the build is switched off. |
 
 The backpack itself stays at 16: unlike a bag, it has no size the server can change.
-How it works: a bag's size is a value on the bag that the server sends to the client. The 3.3.5
-client reads it only when it creates the bag, so a bag resized in play (the perk bought, a bag
-moved) is sent to the client again: close and reopen the bag windows to see it. The core
+How it works: a bag's size is a value on the bag that the server sends to the client. A stock
+3.3.5 client reads it only when it creates the bag and keeps that copy, even when the bag is sent
+again, so a bag resized in play (the perk bought, a bag moved) shows its new size only after a
+relog. Evermore's launcher (Portalkeeper 0.5.46+) edits Wow.exe to read the value itself (wow-server
+`tools/client-patches/live_bag_slots.py`): then close and reopen the bag windows to see it. The core
 equips a character's bags at login before it loads what's in them, so the extra slots are there
 in time for the items saved in them. A bag gets its own size back once it leaves the four bag
 slots. A bag with items in its extra slots can't be moved until they're taken out: in a bank bag
@@ -200,6 +202,9 @@ them:
   Changing the build in the launcher, or undoing the change, brings them back.
 - **Deep Pockets is missing from the launcher**: `Legacy.DeepPockets.Enable` is 0 (the default).
   Try `.legacy bagprobe` first: if the bag windows don't show the extra slots, leave it off.
+- **`.legacy bagprobe` changes nothing on screen**: the client hasn't got the live bag size edit
+  (Portalkeeper 0.5.46+, or `live_bag_slots.py` on Wow.exe). Relog: the bags are created again
+  with their size, but the probe's slots are gone by then (the login puts the perk's back).
 - **Reagent Economy does nothing for a class**: the startup log lists, per class, how many spell
   ranks need only vendor reagents.
 
