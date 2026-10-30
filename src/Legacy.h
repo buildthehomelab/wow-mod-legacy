@@ -46,6 +46,7 @@ namespace Legacy
         PERK_EXPLORERS_STRIDE,
         PERK_SECOND_WIND,
         PERK_FREQUENT_FLIER,
+        PERK_SUMMONING_STONE,
         // Resourcefulness
         PERK_FOR_GREAT_HONOR,
         PERK_GOURMAND,
