@@ -5,9 +5,10 @@ Forever's **Legacy** system.
 
 Challenges done anywhere on an account earn **Legacy points**, one each. A class reaching a level,
 a profession reaching a skill and a raid's achievement are all challenges. Every character spends
-up to 16 of those points on perks in three trees: **Adventure**, **Resourcefulness** and
-**Professions**. They make levelling, travelling and professions easier; only Talented and
-Prodigy add combat power, as talent points.
+those points on perks in three trees, **Adventure**, **Resourcefulness** and **Professions**, and
+a **General** row above them, up to a cap that grows with the character's era. They make
+levelling, travelling and professions easier; only Talented and Prodigy add combat power, as
+talent points.
 
 Perks are picked on the LEGACY page of the
 [Portalkeeper launcher fork](https://github.com/buildthehomelab/wow-Portalkeeper). The launcher
@@ -23,17 +24,28 @@ is in combat.
 - Each challenge in the world table `mod_legacy_challenge` is worth one point, once per account.
   The first character to do it gets the credit. Deleting that character doesn't take the point
   back.
-- A character can spend `Legacy.PointCap` points (16, like WoW Forever's first season). The
-  account can earn far more: 125 challenges ship with the module.
-- **Hardcore**: with mod-challenges (its `mod_challenges_character` table), a character still on its Hardcore challenge spends only points that hardcore characters earned.
-  A normal character spends everything the account earned, hardcore points included (WoW
-  Forever's rule). A hardcore character that dies plays on as a normal one and gets the full
-  pool.
+- **Era caps**: each challenge belongs to an era (the `era` column: 0 Classic, 1 The Burning
+  Crusade, 2 Wrath of the Lich King). A character can spend at most as many points as there are
+  challenges up to its own era, which comes from mod-individual-progression's state (quest
+  66000 + state; 8 and later is The Burning Crusade, 13 and later Wrath). With the 125 challenges
+  that ship with the module that's **67** in Classic, **96** in The Burning Crusade and **125** in
+  Wrath. So a Classic character can't spend points its account earned in Outland or Northrend
+  until it gets there. `Legacy.EraCaps.Enable = 0` drops the era caps; `Legacy.PointCap` adds a
+  flat limit on top (0, none, by default).
+- **Hardcore**: with mod-challenges (its `mod_challenges_character` table), a character still on
+  its Hardcore challenge spends only points that hardcore characters earned, and only on **Deep
+  Pockets**, **Talented** and **Prodigy**: 24 points in all (`Legacy.Hardcore.LimitedPerks`). It
+  skips what Talented and Prodigy normally need from the rest of Adventure (the tree points and
+  Well Rested 5/5); Prodigy still needs Talented 5/5. A normal character spends everything the
+  account earned, hardcore points included (WoW Forever's rule), and its trees work as usual. A
+  hardcore character that dies plays on as a normal one and gets the full pool and every perk; its
+  Talented and Prodigy then need their usual requirements, so a build without them switches off at
+  its next login until it is changed in the launcher.
 - Progress made before the module was installed counts. The launcher's listing and each login
   check every character of the account from the database. Bot accounts are left out.
 - If a saved build no longer fits (the cap was lowered, challenges were switched off, or the
   character took Hardcore after picking perks), its perks switch off at login until it is changed
-  in the launcher. Nothing is deleted, so undoing the change brings them back.
+  in the launcher (Deep Pockets stays). Nothing is deleted, so undoing the change brings them back.
 
 ## The trees
 
@@ -42,12 +54,17 @@ and a perk in the third row needs 10. Some perks also need every rank of the per
 
 ### General
 
-One row above the three trees, with nothing needed in any tree. Off until
+One row above the three trees, with nothing needed in any tree. Deep Pockets is off until
 `Legacy.DeepPockets.Enable = 1`.
 
 | Perk | Ranks | Per rank |
 |---|---|---|
 | Deep Pockets | 10 | Each bag in your four bag slots has 1 more slot (36 at most). **Permanent**: a saved rank can't be taken back, and it stays when the rest of the build is switched off. |
+| Hasty Hearth | 5 | Your Hearthstone cools down 5 min sooner: 30 min down to 5 min at rank 5. Astral Recall, the Scrolls of Recall, the Runes of Recall, the Ruby Slippers, the Gauntlets of the Cheerful Hearth and the Ethereal Portal cool down 5 min sooner too, never below 5 min. |
+
+Hasty Hearth expects the realm's own cooldowns for those (30 min for the Hearthstone). After
+every cast of one of them, perk or not, the module sends the client the cooldown the server has,
+since the client otherwise starts the one its Spell.dbc names.
 
 The backpack itself stays at 16: unlike a bag, it has no size the server can change.
 How it works: a bag's size is a value on the bag that the server sends to the client. A stock
@@ -139,6 +156,12 @@ Some perks also work a little differently, because of what the core lets a modul
 | Exploration | Explore Eastern Kingdoms, Kalimdor, Outland and Northrend | 4 |
 | PvP | Exalted with Warsong Gulch, Arathi Basin and Alterac Valley (either side) | 3 |
 
+By era: **Classic 67** (levels 20 to 60, professions to 300, Novice to Master Spelunker, the seven
+Classic raids, Eastern Kingdoms and Kalimdor, the three PvP factions), **The Burning Crusade 29**
+(level 70, professions to 375, Outland Spelunker, the nine Burning Crusade raids, Outland) and
+**Wrath of the Lich King 29** (level 80, professions to 450, Northrend Spelunker, the nine Wrath
+raids, Northrend).
+
 The rows are data: add, edit or switch them off (`enabled = 0`) and run `.legacy reload`. A
 point earned stays earned, but a challenge that is switched off no longer counts toward the
 total. Rows 100-699 ship with the module and are rewritten whenever its SQL changes, so put your
@@ -168,6 +191,8 @@ own rows at 700 or above. Challenge types:
 - SOAP enabled on the worldserver, for the launcher's page (the portal runs `.legacy list` and
   `.legacy set` as console commands).
 - Optional: mod-challenges, for the separate hardcore points.
+- Optional: mod-individual-progression, for the era caps (without it, turn
+  `Legacy.EraCaps.Enable` off, or every character stays at the Classic cap).
 
 ## Installation
 
@@ -204,7 +229,9 @@ them:
   server's data. Naxxramas (Level 60) needs mod-individual-progression's achievement (533), and
   only mod-individual-progression awards Onyxia's Lair (Level 60) (684).
 - **A player's perks "switched off" at login**: the build needs more points than the character
-  has now (a lower `Legacy.PointCap`, challenges switched off, or Hardcore taken after picking).
+  has now (a lower `Legacy.PointCap`, challenges switched off, or Hardcore taken after picking),
+  or a hardcore character has a perk other than Deep Pockets, Talented and Prodigy, or a
+  character that left Hardcore has Talented or Prodigy without the rest of Adventure.
   Changing the build in the launcher, or undoing the change, brings them back.
 - **Deep Pockets is missing from the launcher**: `Legacy.DeepPockets.Enable` is 0 (the default).
   Try `.legacy bagprobe` first: if the bag windows don't show the extra slots, leave it off.

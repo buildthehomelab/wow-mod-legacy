@@ -99,7 +99,12 @@ namespace
 
         { PERK_DEEP_POCKETS, "deep_pockets", TREE_GENERAL, "Deep Pockets", "inv_misc_bag_felclothbag", 10, 0, 0, 0, NO_PERK, 1,
             "The bags in your four bag slots hold more. Permanent: a saved rank can't be taken back." },
+        { PERK_HASTY_HEARTH, "hasty_hearth", TREE_GENERAL, "Hasty Hearth", "inv_misc_rune_01", 5, 0, 1, 0, NO_PERK, 5,
+            "Your Hearthstone and the other ways home cool down sooner." },
     }};
+
+    // The highest mod-individual-progression state looked for (it has 18; a little room for more).
+    constexpr uint32 IP_STATE_LIMIT = 30;
 
     // Second Wind and Gourmand go in thirds.
     uint32 Thirds(uint8 rank)
@@ -131,6 +136,7 @@ namespace
         uint32 value1 = 0;
         uint32 value2 = 0;
         std::vector<uint32> list;
+        uint8 era = ERA_CLASSIC;
     };
 
     struct ProfessionDefinition
@@ -260,6 +266,8 @@ namespace
 
     std::shared_mutex challengeLock;
     std::vector<Challenge> challenges;
+    // eraCaps[era]: the challenges up to that era.
+    std::array<uint32, MAX_ERAS> eraCaps = {};
 
     std::mutex doneLock;
     std::unordered_map<uint32, std::unordered_map<uint32, Done>> doneByAccount;
@@ -498,6 +506,9 @@ namespace Legacy
             case PERK_DEEP_POCKETS:
                 return Acore::StringFormat("Each bag in your four bag slots has {} more slot{} (36 at most). Permanent: once saved, this rank can't be taken back.",
                     value, value == 1 ? "" : "s");
+            case PERK_HASTY_HEARTH:
+                return Acore::StringFormat("Your Hearthstone cools down in {} min instead of 30. Astral Recall, Scrolls of Recall and the other ways home cool down {} min sooner too, never below 5 min.",
+                    30 - value, value);
             default:
                 return perk.description;
         }
@@ -511,6 +522,26 @@ namespace Legacy
     bool Permanent(Perk perk)
     {
         return perk == PERK_DEEP_POCKETS;
+    }
+
+    bool HardcoreAllowed(Perk perk)
+    {
+        return !config.hardcoreLimited || perk == PERK_DEEP_POCKETS || perk == PERK_TALENTED || perk == PERK_PRODIGY;
+    }
+
+    bool HardcoreLimited(bool hardcore)
+    {
+        return hardcore && config.hardcoreLimited;
+    }
+
+    char const* EraName(uint8 era)
+    {
+        switch (era)
+        {
+            case ERA_CLASSIC: return "Classic";
+            case ERA_TBC:     return "The Burning Crusade";
+            default:          return "Wrath of the Lich King";
+        }
     }
 
     Build GetBuild(uint32 guid)
@@ -590,18 +621,24 @@ namespace Legacy
         return spent;
     }
 
-    std::pair<std::string, std::string> Validate(Build const& build, uint32 points)
+    std::pair<std::string, std::string> Validate(Build const& build, uint32 points, bool hardcore)
     {
         for (PerkInfo const& perk : PERKS)
         {
             uint8 rank = build[perk.perk];
             if (!rank)
                 continue;
+            // A hardcore character takes only a few perks, so it skips the tree points and any
+            // required perk it can't take (Talented's Well Rested); Prodigy still needs Talented.
+            bool limited = HardcoreLimited(hardcore);
+            if (limited && !HardcoreAllowed(perk.perk))
+                return { "locked", Acore::StringFormat("Hardcore characters can't take {}: only Deep Pockets, Talented and Prodigy.", perk.name) };
             if (rank > perk.maxRank)
                 return { "invalid", Acore::StringFormat("{} has only {} rank{}.", perk.name, perk.maxRank, perk.maxRank > 1 ? "s" : "") };
-            if (SpentInTree(build, perk.tree) - rank < perk.requiresTreePoints)
+            if (!limited && SpentInTree(build, perk.tree) - rank < perk.requiresTreePoints)
                 return { "locked", Acore::StringFormat("{} needs {} points in {} first.", perk.name, perk.requiresTreePoints, TREES[perk.tree].name) };
-            if (perk.requiresPerk != NO_PERK && build[perk.requiresPerk] < PERKS[perk.requiresPerk].maxRank)
+            if (perk.requiresPerk != NO_PERK && (!limited || HardcoreAllowed(Perk(perk.requiresPerk)))
+                && build[perk.requiresPerk] < PERKS[perk.requiresPerk].maxRank)
                 return { "locked", Acore::StringFormat("{} needs every rank of {} first.", perk.name, PERKS[perk.requiresPerk].name) };
         }
 
@@ -632,10 +669,60 @@ namespace Legacy
         return earned;
     }
 
-    uint32 SpendablePoints(Earned const& earned, bool hardcore)
+    uint8 CharacterEra(Player const* player)
+    {
+        if (!config.eraCaps)
+            return ERA_WOTLK;
+        // mod-individual-progression rewards quest 66000 + state as a character moves on.
+        for (uint32 state = IP_STATE_LIMIT; state >= config.tbcState; --state)
+            if (player->GetQuestRewardStatus(config.ipQuestBase + state))
+                return state >= config.wotlkState ? ERA_WOTLK : ERA_TBC;
+        return ERA_CLASSIC;
+    }
+
+    std::unordered_map<uint32, uint8> CharacterEras(std::vector<uint32> const& guids)
+    {
+        std::unordered_map<uint32, uint8> eras;
+        for (uint32 guid : guids)
+            eras[guid] = config.eraCaps ? ERA_CLASSIC : ERA_WOTLK;
+        if (!config.eraCaps || guids.empty())
+            return eras;
+
+        std::string list;
+        for (uint32 guid : guids)
+            list += (list.empty() ? "" : ",") + std::to_string(guid);
+        if (QueryResult result = CharacterDatabase.Query("SELECT guid, MAX(quest) FROM character_queststatus_rewarded "
+            "WHERE guid IN ({}) AND quest BETWEEN {} AND {} GROUP BY guid",
+            list, config.ipQuestBase + config.tbcState, config.ipQuestBase + IP_STATE_LIMIT))
+        {
+            do
+            {
+                Field* fields = result->Fetch();
+                eras[fields[0].Get<uint32>()] = fields[1].Get<uint32>() >= config.ipQuestBase + config.wotlkState ? ERA_WOTLK : ERA_TBC;
+            } while (result->NextRow());
+        }
+
+        // An online character may be ahead of what was last saved.
+        for (auto& [guid, era] : eras)
+            if (Player* player = ObjectAccessor::FindConnectedPlayer(ObjectGuid::Create<HighGuid::Player>(guid)))
+                era = CharacterEra(player);
+        return eras;
+    }
+
+    uint32 EraCap(uint8 era)
+    {
+        uint32 cap;
+        {
+            std::shared_lock<std::shared_mutex> guard(challengeLock);
+            cap = eraCaps[std::min<uint8>(era, ERA_WOTLK)];
+        }
+        return config.pointCap ? std::min(cap, config.pointCap) : cap;
+    }
+
+    uint32 SpendablePoints(Earned const& earned, bool hardcore, uint8 era)
     {
         uint32 points = hardcore && config.hardcorePool ? earned.hardcore : earned.total;
-        return std::min(points, config.pointCap);
+        return std::min(points, EraCap(era));
     }
 
     bool HardcoreTracked()
@@ -648,7 +735,7 @@ namespace Legacy
     // challenge is done or the build is checked.
     bool IsHardcore(uint32 guid)
     {
-        if (!hardcoreTable || !config.hardcorePool)
+        if (!hardcoreTable)
             return false;
         return CharacterDatabase.Query("SELECT 1 FROM mod_challenges_character WHERE guid = {} AND (challenge & 1) AND state = 0", guid) != nullptr;
     }
@@ -793,7 +880,7 @@ namespace Legacy
         std::vector<Challenge> loaded;
         Watched watching;
         uint32 skipped = 0;
-        if (QueryResult result = WorldDatabase.Query("SELECT id, category, name, description, type, value1, value2, list "
+        if (QueryResult result = WorldDatabase.Query("SELECT id, category, name, description, type, value1, value2, list, era "
             "FROM mod_legacy_challenge WHERE enabled = 1 ORDER BY sort, id"))
         {
             do
@@ -808,6 +895,7 @@ namespace Legacy
                 challenge.value1 = fields[5].Get<uint32>();
                 challenge.value2 = fields[6].Get<uint32>();
                 challenge.list = ParseList(fields[7].Get<std::string>());
+                challenge.era = std::min<uint8>(fields[8].Get<uint8>(), ERA_WOTLK);
 
                 bool ok = true;
                 switch (challenge.type)
@@ -853,11 +941,18 @@ namespace Legacy
             } while (result->NextRow());
         }
 
+        std::array<uint32, MAX_ERAS> caps = {};
+        for (Challenge const& challenge : loaded)
+            for (uint8 era = challenge.era; era < MAX_ERAS; ++era)
+                ++caps[era];
+
         std::unique_lock<std::shared_mutex> guard(challengeLock);
         ProfessionTrainerLevels = std::move(trainerLevels);
         challenges = std::move(loaded);
         watched = std::move(watching);
-        LOG_INFO("module", "mod-legacy: {} challenges loaded ({} skipped).", challenges.size(), skipped);
+        eraCaps = caps;
+        LOG_INFO("module", "mod-legacy: {} challenges loaded ({} skipped); caps {} Classic, {} The Burning Crusade, {} Wrath of the Lich King.",
+            challenges.size(), skipped, caps[ERA_CLASSIC], caps[ERA_TBC], caps[ERA_WOTLK]);
     }
 
     void LoadRanks()
@@ -981,8 +1076,13 @@ public:
     void OnAfterConfigLoad(bool /*reload*/) override
     {
         config.enabled = sConfigMgr->GetOption<bool>("Legacy.Enable", true);
-        config.pointCap = sConfigMgr->GetOption<uint32>("Legacy.PointCap", 16);
+        config.pointCap = sConfigMgr->GetOption<uint32>("Legacy.PointCap", 0);
+        config.eraCaps = sConfigMgr->GetOption<bool>("Legacy.EraCaps.Enable", true);
+        config.ipQuestBase = sConfigMgr->GetOption<uint32>("Legacy.EraCaps.QuestBase", 66000);
+        config.tbcState = uint8(std::clamp<uint32>(sConfigMgr->GetOption<uint32>("Legacy.EraCaps.TbcState", 8), 1, IP_STATE_LIMIT));
+        config.wotlkState = uint8(std::clamp<uint32>(sConfigMgr->GetOption<uint32>("Legacy.EraCaps.WotlkState", 13), config.tbcState, IP_STATE_LIMIT));
         config.hardcorePool = sConfigMgr->GetOption<bool>("Legacy.Hardcore.SeparatePoints", true);
+        config.hardcoreLimited = sConfigMgr->GetOption<bool>("Legacy.Hardcore.LimitedPerks", true);
         config.announce = sConfigMgr->GetOption<bool>("Legacy.AnnounceChallenges", true);
         config.deepPockets = sConfigMgr->GetOption<bool>("Legacy.DeepPockets.Enable", false);
     }
