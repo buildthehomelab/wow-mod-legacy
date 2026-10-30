@@ -168,6 +168,38 @@ namespace
                         fn(item);
     }
 
+    // Deep Pockets' extra slots for the player's bags in the four bag slots. They stay with a
+    // suspended build: the perk is permanent, and shrinking would push items out of the bags.
+    uint32 PocketSlots(Player const* player)
+    {
+        if (!GetConfig().enabled || !GetConfig().deepPockets)
+            return 0;
+        return SavedRank(player->GetGUID().GetCounter(), PERK_DEEP_POCKETS) * Perks()[PERK_DEEP_POCKETS].perRank;
+    }
+
+    // A bag's size is its own plus `extra`, but never less than the last slot holding an item.
+    void FitBag(Bag* bag, uint32 extra)
+    {
+        uint32 size = std::min<uint32>(bag->GetTemplate()->ContainerSlots + extra, MAX_BAG_SIZE);
+        for (uint32 slot = bag->GetBagSize(); slot > size; --slot)
+            if (bag->GetItemByPos(uint8(slot - 1)))
+            {
+                size = slot;
+                break;
+            }
+        if (bag->GetBagSize() != size)
+            bag->SetUInt32Value(CONTAINER_FIELD_NUM_SLOTS, size);
+    }
+
+    // Whether a bag has an item past its own size (in Deep Pockets' slots).
+    bool HoldsExtra(Bag const* bag)
+    {
+        for (uint32 slot = bag->GetTemplate()->ContainerSlots; slot < bag->GetBagSize(); ++slot)
+            if (bag->GetItemByPos(uint8(slot)))
+                return true;
+        return false;
+    }
+
     void SetAuraAmounts(Aura* aura, int32 amount)
     {
         if (!aura)
@@ -323,6 +355,32 @@ namespace
 
 namespace Legacy
 {
+    // A bag leaves the four bag slots empty (the core) or at least empty of its extra slots
+    // (OnPlayerCanUnequipItem), so every other bag gets its own size back; the bank bag slots, the
+    // backpack, the bank and empty bags kept inside bags are all looked at.
+    void UpdateBags(Player* player, Optional<uint32> extra)
+    {
+        uint32 pockets = extra.value_or(PocketSlots(player));
+        auto fitInside = [](Bag* bag)
+        {
+            for (uint32 slot = 0; slot < bag->GetBagSize(); ++slot)
+                if (Item* item = bag->GetItemByPos(uint8(slot)))
+                    if (Bag* inner = item->ToBag())
+                        FitBag(inner, 0);
+        };
+        for (uint8 slot = INVENTORY_SLOT_BAG_START; slot < BANK_SLOT_BAG_END; ++slot)
+        {
+            Item* item = player->GetItemByPos(INVENTORY_SLOT_BAG_0, slot);
+            Bag* bag = item ? item->ToBag() : nullptr;
+            if (!bag)
+                continue;
+            bool worn = slot < INVENTORY_SLOT_BAG_END;
+            FitBag(bag, worn ? pockets : 0);
+            if (worn || slot >= BANK_SLOT_BAG_START)
+                fitInside(bag);
+        }
+    }
+
     void RefreshPerks(Player* player)
     {
         // Every logout runs Unit::CleanupBeforeRemoveFromMap: it takes the player out of the
@@ -461,6 +519,9 @@ public:
         PLAYERHOOK_ON_LOOT_ITEM,
         PLAYERHOOK_ON_GET_REPUTATION_PRICE_DISCOUNT,
         PLAYERHOOK_ON_DELETE_FROM_DB,
+        PLAYERHOOK_ON_EQUIP,
+        PLAYERHOOK_ON_UNEQUIP_ITEM,
+        PLAYERHOOK_CAN_UNEQUIP_ITEM,
 #ifdef LEGACY_CORE_HAS_TAXI_SPEED
         PLAYERHOOK_ON_TAXI_FLIGHT_SPEED,
 #endif
@@ -806,6 +867,34 @@ public:
         trans->Append("DELETE FROM mod_legacy_rank WHERE guid = {}", guid);
         trans->Append("DELETE FROM mod_legacy_character WHERE guid = {}", guid);
         ForgetCharacter(guid);
+    }
+
+    // Deep Pockets. At login the core equips the bags before it loads what's in them, so this
+    // also gives a bag its extra slots in time for the items saved there.
+    void OnPlayerEquip(Player* player, Item* item, uint8 /*bag*/, uint8 /*slot*/, bool /*update*/) override
+    {
+        if (item->IsBag() && !IsBotSession(player->GetSession()))
+            UpdateBags(player);
+    }
+
+    void OnPlayerUnequip(Player* player, Item* item) override
+    {
+        if (item->IsBag() && !IsBotSession(player->GetSession()))
+            UpdateBags(player);
+    }
+
+    // A bag with items in its extra slots stays in the four bag slots: in a bank bag slot it would
+    // lose those slots at the next login, and the core would mail the items.
+    bool OnPlayerCanUnequipItem(Player* player, uint16 pos, bool /*swap*/) override
+    {
+        if ((pos >> 8) != INVENTORY_SLOT_BAG_0 || (pos & 255) < INVENTORY_SLOT_BAG_START || (pos & 255) >= INVENTORY_SLOT_BAG_END)
+            return true;
+        Bag* bag = player->GetBagByPos(uint8(pos & 255));
+        if (!bag || !HoldsExtra(bag))
+            return true;
+        ChatHandler(player->GetSession()).PSendSysMessage("|cffe6cc80Deep Pockets:|r take the items out of this bag's last {} slots before you move it.",
+            bag->GetBagSize() - bag->GetTemplate()->ContainerSlots);
+        return false;
     }
 
 #ifdef LEGACY_CORE_HAS_TAXI_SPEED
