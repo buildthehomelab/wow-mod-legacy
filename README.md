@@ -47,7 +47,7 @@ One row above the three trees, with nothing needed in any tree. Off until
 
 | Perk | Ranks | Per rank |
 |---|---|---|
-| Deep Pockets | 5 | Each bag in your four bag slots has 2 more slots (36 at most). **Permanent**: a saved rank can't be taken back, and it stays when the rest of the build is switched off. |
+| Deep Pockets | 10 | Each bag in your four bag slots has 1 more slot (36 at most). **Permanent**: a saved rank can't be taken back, and it stays when the rest of the build is switched off. |
 
 The backpack itself stays at 16: unlike a bag, it has no size the server can change.
 How it works: a bag's size is a value on the bag that the server sends to the client. A stock

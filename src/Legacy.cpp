@@ -93,7 +93,7 @@ namespace
         { PERK_DEDICATED_STUDY, "dedicated_study", TREE_PROFESSIONS, "Dedicated Study", "inv_misc_book_09", 1, 2, 1, 10, NO_PERK, 1,
             "Once a day, your lowest profession (primary or secondary) that isn't at its maximum gains 1 skill." },
 
-        { PERK_DEEP_POCKETS, "deep_pockets", TREE_GENERAL, "Deep Pockets", "inv_misc_bag_felclothbag", 5, 0, 0, 0, NO_PERK, 2,
+        { PERK_DEEP_POCKETS, "deep_pockets", TREE_GENERAL, "Deep Pockets", "inv_misc_bag_felclothbag", 10, 0, 0, 0, NO_PERK, 1,
             "The bags in your four bag slots hold more. Permanent: a saved rank can't be taken back." },
     }};
 
@@ -488,7 +488,8 @@ namespace Legacy
             case PERK_DEDICATED_STUDY:
                 return "Once a day, your lowest profession (primary or secondary) that isn't at its maximum gains 1 skill. Once all of them are, it does nothing.";
             case PERK_DEEP_POCKETS:
-                return Acore::StringFormat("Each bag in your four bag slots has {} more slots (36 at most). Permanent: once saved, this rank can't be taken back.", value);
+                return Acore::StringFormat("Each bag in your four bag slots has {} more slot{} (36 at most). Permanent: once saved, this rank can't be taken back.",
+                    value, value == 1 ? "" : "s");
             default:
                 return perk.description;
         }

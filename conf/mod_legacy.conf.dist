@@ -50,7 +50,7 @@ Legacy.AnnounceChallenges = 1
 
 #
 #    Legacy.DeepPockets.Enable
-#        Description: Offer Deep Pockets (General row, 5 ranks: +2 slots per rank on each bag
+#        Description: Offer Deep Pockets (General row, 10 ranks: +1 slot per rank on each bag
 #                     in the four bag slots, permanent once saved). Check with `.legacy bagprobe`
 #                     that the client draws the extra slots first. Switching it off later takes the
 #                     slots away; items in them come back by mail at the next login.
