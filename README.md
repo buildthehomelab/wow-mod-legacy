@@ -51,6 +51,7 @@ and a perk in the third row needs 10. Some perks also need every rank of the per
 | Explorer's Stride | 5 | +2% run speed on foot out of combat. Not in dungeons, raids or battlegrounds. Needs Well Rested 5/5. |
 | Second Wind | 3 | Resurrection Sickness 33% shorter; at rank 3, none at all. |
 | Frequent Flier | 1 | Flight paths cost 50% less, and you fly 20% faster. |
+| Summoning Stone | 1 | Raid Finder's Summon to Stone takes you to the raid's meeting stone from anywhere (mod-raid-finder reads this perk). Without it you travel there yourself; Gather Bots at the stone still brings your raid's bots. |
 
 ### Resourcefulness
 

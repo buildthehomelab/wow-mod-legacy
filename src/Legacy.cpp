@@ -59,6 +59,8 @@ namespace
             "Resurrection Sickness wears off sooner." },
         { PERK_FREQUENT_FLIER, "frequent_flier", TREE_ADVENTURE, "Frequent Flier", "ability_mount_gryphon_01", 1, 2, 1, 10, NO_PERK, 50,
             "Flight paths cost less and fly faster." },
+        { PERK_SUMMONING_STONE, "summoning_stone", TREE_ADVENTURE, "Summoning Stone", "spell_shadow_twilight", 1, 2, 0, 10, NO_PERK, 0,
+            "Raid Finder's Summon to Stone takes you to the raid's meeting stone from anywhere." },
 
         { PERK_FOR_GREAT_HONOR, "for_great_honor", TREE_RESOURCEFULNESS, "For Great Honor", "inv_jewelry_trinketpvp_01", 5, 0, 0, 0, NO_PERK, 2,
             "You gain more honor from honorable kills." },
@@ -449,6 +451,8 @@ namespace Legacy
                     : Acore::StringFormat("Resurrection Sickness wears off {}% sooner.", Thirds(rank));
             case PERK_FREQUENT_FLIER:
                 return "Flight paths cost 50% less, and you fly 20% faster.";
+            case PERK_SUMMONING_STONE:
+                return "Raid Finder's Summon to Stone takes you to the raid's meeting stone from anywhere. Without it, you travel there yourself; the stone still gathers your raid's bots.";
             case PERK_FOR_GREAT_HONOR:
                 return Acore::StringFormat("You gain {}% more honor from honorable kills.", value);
             case PERK_GOURMAND:
