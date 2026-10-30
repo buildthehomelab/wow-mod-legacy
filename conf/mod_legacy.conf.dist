@@ -4,9 +4,9 @@
 # mod-legacy
 #
 # WoW Forever's Legacy system: challenges done anywhere on the account earn Legacy points, and
-# every character spends them on perks in three trees. Perks are picked in the launcher (the
-# portal's api/launcher/legacy.php, LEGACY_ENABLED). The challenges are the world table
-# mod_legacy_challenge.
+# every character spends them on perks in three trees and a General row. Perks are picked in
+# the launcher (the portal's api/launcher/legacy.php, LEGACY_ENABLED). The challenges are the
+# world table mod_legacy_challenge.
 ########################################
 
 #
@@ -20,14 +20,40 @@
 Legacy.Enable = 1
 
 #
-#    Legacy.PointCap
-#        Description: The most Legacy points one character can spend. WoW Forever's first
-#                     season allows 16; the challenges can earn an account far more. Lowering it
-#                     resets the perks of characters that spent more, at their next login.
-#        Default:     16
+#    Legacy.EraCaps.Enable
+#        Description: 1: a character spends at most as many points as there are challenges up to
+#                     its own era, from mod-individual-progression's state (with the shipped
+#                     challenges: 67 in Classic, 96 in The Burning Crusade, 125 in Wrath of the
+#                     Lich King). Each challenge row's `era` says where it belongs. 0: every
+#                     character can spend everything the account earned.
+#        Default:     1
 #
 
-Legacy.PointCap = 16
+Legacy.EraCaps.Enable = 1
+
+#
+#    Legacy.EraCaps.QuestBase
+#    Legacy.EraCaps.TbcState
+#    Legacy.EraCaps.WotlkState
+#        Description: mod-individual-progression rewards quest QuestBase + state as a character
+#                     moves on. A character at TbcState or later is in The Burning Crusade, at
+#                     WotlkState or later in Wrath of the Lich King.
+#        Default:     66000, 8, 13
+#
+
+Legacy.EraCaps.QuestBase = 66000
+Legacy.EraCaps.TbcState = 8
+Legacy.EraCaps.WotlkState = 13
+
+#
+#    Legacy.PointCap
+#        Description: An extra limit on the points one character can spend, on top of the era
+#                     caps; 0 for none. Lowering it switches off the perks of characters that
+#                     spent more, at their next login, until they're changed in the launcher.
+#        Default:     0
+#
+
+Legacy.PointCap = 0
 
 #
 #    Legacy.Hardcore.SeparatePoints
@@ -39,6 +65,19 @@ Legacy.PointCap = 16
 #
 
 Legacy.Hardcore.SeparatePoints = 1
+
+#
+#    Legacy.Hardcore.LimitedPerks
+#        Description: 1: a hardcore character (mod-challenges' Hardcore, still running) can only
+#                     take Deep Pockets, Talented and Prodigy (24 points), and skips what those
+#                     normally need from the rest of Adventure: the tree points and Well Rested.
+#                     Prodigy still needs Talented 5/5. A hardcore character that has other perks
+#                     has them switched off at its next login until they're changed in the
+#                     launcher. 0: hardcore characters take perks like everyone else.
+#        Default:     1
+#
+
+Legacy.Hardcore.LimitedPerks = 1
 
 #
 #    Legacy.AnnounceChallenges

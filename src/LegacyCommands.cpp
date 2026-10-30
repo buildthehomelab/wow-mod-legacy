@@ -22,6 +22,7 @@
 #include "Tokenize.h"
 #include "WorldSession.h"
 #include <algorithm>
+#include <unordered_map>
 #include <unordered_set>
 
 using namespace Acore::ChatCommands;
@@ -39,6 +40,7 @@ namespace
         uint8 level = 0;
         Player* online = nullptr;
         bool hardcore = false;
+        uint8 era = ERA_CLASSIC;
     };
 
     std::vector<Character> LoadCharacters(uint32 account, uint32 onlyGuid = 0)
@@ -66,7 +68,17 @@ namespace
             } while (result->NextRow());
         }
 
-        if (HardcoreTracked() && GetConfig().hardcorePool && !characters.empty())
+        if (characters.empty())
+            return characters;
+
+        std::vector<uint32> guidList;
+        for (Character const& character : characters)
+            guidList.push_back(character.guid);
+        std::unordered_map<uint32, uint8> eras = CharacterEras(guidList);
+        for (Character& character : characters)
+            character.era = eras[character.guid];
+
+        if (HardcoreTracked())
         {
             std::string guids;
             for (Character const& character : characters)
@@ -90,10 +102,21 @@ namespace
         for (PerkInfo const& perk : Perks())
             if (build[perk.perk])
                 ranks += Acore::StringFormat("{}\"{}\":{}", ranks.empty() ? "" : ",", perk.key, build[perk.perk]);
+        // "only": the perks a hardcore character may take, every perk when it's missing. Requirements
+        // on perks outside the list don't count for that character (Validate).
+        std::string only;
+        if (HardcoreLimited(c.hardcore))
+        {
+            for (PerkInfo const& perk : Perks())
+                if (HardcoreAllowed(perk.perk))
+                    only += Acore::StringFormat("{}\"{}\"", only.empty() ? "" : ",", perk.key);
+            only = ",\"only\":[" + only + "]";
+        }
         return Acore::StringFormat("{{\"guid\":{},\"name\":{},\"race\":{},\"class\":{},\"gender\":{},\"level\":{},\"online\":{},"
-            "\"hardcore\":{},\"points\":{},\"spent\":{},\"ranks\":{{{}}}}}",
+            "\"hardcore\":{},\"era\":{},\"cap\":{},\"points\":{},\"spent\":{}{},\"ranks\":{{{}}}}}",
             c.guid, JsonString(c.name), c.race, c.cls, c.gender, c.level, c.online ? "true" : "false",
-            c.hardcore ? "true" : "false", SpendablePoints(earned, c.hardcore), Spent(build), ranks);
+            c.hardcore ? "true" : "false", JsonString(EraName(c.era)), EraCap(c.era), SpendablePoints(earned, c.hardcore, c.era),
+            Spent(build), only, ranks);
     }
 
     // The General tree is a "strip": one row drawn above the three trees. A tree with no perk
@@ -198,8 +221,9 @@ public:
         std::vector<Character> characters = LoadCharacters(account);
         Earned earned = GetEarned(account);
 
+        // The top-level cap is the highest a character can have; each character names its own.
         std::string json = Acore::StringFormat("{{\"ok\":true,\"cap\":{},\"earned\":{{\"total\":{},\"hardcore\":{}}},\"characters\":[",
-            GetConfig().pointCap, earned.total, earned.hardcore);
+            EraCap(ERA_WOTLK), earned.total, earned.hardcore);
         for (size_t i = 0; i < characters.size(); ++i)
             json += (i ? "," : "") + CharacterJson(characters[i], earned);
         json += "],\"trees\":" + TreesJson() + ",\"challenges\":" + ChallengesJson(account) + "}";
@@ -238,7 +262,8 @@ public:
 
         BackfillAccount(account);
         Earned earned = GetEarned(account);
-        auto [code, message] = Validate(build, SpendablePoints(earned, character.hardcore));
+        uint32 points = SpendablePoints(earned, character.hardcore, character.era);
+        auto [code, message] = Validate(build, points, character.hardcore);
         if (!code.empty())
             return Refuse(handler, code, message);
 
@@ -251,7 +276,7 @@ public:
             // Talented and Prodigy: a character with fewer points than it spent gets a free reset.
             player->InitTalentForLevel();
             ChatHandler(player->GetSession()).PSendSysMessage("|cffe6cc80Legacy:|r your perks were changed in the launcher ({} of {} points spent).",
-                Spent(build), SpendablePoints(earned, character.hardcore));
+                Spent(build), points);
         }
 
         Answer(handler, Acore::StringFormat("{{\"ok\":true,\"character\":{},\"message\":{}}}", CharacterJson(character, earned),
@@ -273,10 +298,14 @@ public:
         uint32 guid = player->GetGUID().GetCounter();
         Earned earned = GetEarned(player->GetSession()->GetAccountId());
         bool hardcore = IsHardcore(guid);
+        uint8 era = CharacterEra(player);
         Build build = GetBuild(guid);
-        handler->PSendSysMessage("|cffe6cc80Legacy:|r {} of {} points spent; your account has earned {}{}.", Spent(build),
-            SpendablePoints(earned, hardcore), earned.total,
-            hardcore ? Acore::StringFormat(" ({} on hardcore characters, which is what a hardcore character spends)", earned.hardcore) : "");
+        handler->PSendSysMessage("|cffe6cc80Legacy:|r {} of {} points spent; your account has earned {}{}. In {} you can spend up to {}.", Spent(build),
+            SpendablePoints(earned, hardcore, era), earned.total,
+            hardcore ? Acore::StringFormat(" ({} on hardcore characters, which is what a hardcore character spends)", earned.hardcore) : "",
+            EraName(era), EraCap(era));
+        if (HardcoreLimited(hardcore))
+            handler->SendSysMessage("  Hardcore characters can only take Deep Pockets, Talented and Prodigy, without the Adventure points those normally need.");
         for (TreeInfo const& tree : Trees())
             for (PerkInfo const& perk : Perks())
                 if (perk.tree == tree.tree && build[perk.perk])

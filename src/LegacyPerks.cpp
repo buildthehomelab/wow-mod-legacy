@@ -19,6 +19,8 @@
  * - The Quick and the Dead refunds what a helpful spell took just after the cast, so a spell
  *   still needs the mana to start.
  * - Working Overtime is a second skill-up roll, so at orange recipes it can give two points.
+ * - Hasty Hearth is new: the realm's Hearthstone is back at 30 min, and each rank takes 5 min off
+ *   it (and off the other ways home, never below 5 min).
  * - Well Rested needs the core's OnPlayerGainRestBonus / OnPlayerGetRestBonusMax hooks, and
  *   Frequent Flier the OnPlayerTaxiCostDiscount / OnPlayerTaxiFlightSpeed hooks. On a core
  *   without them Well Rested and the faster flights do nothing, and only a flight's first leg is
@@ -42,6 +44,7 @@
 #include "Log.h"
 #include "LootMgr.h"
 #include "Map.h"
+#include "ObjectAccessor.h"
 #include "ObjectMgr.h"
 #include "Player.h"
 #include "ScriptMgr.h"
@@ -50,6 +53,7 @@
 #include "SpellAuras.h"
 #include "SpellMgr.h"
 #include "World.h"
+#include "WorldPacket.h"
 #include "WorldSession.h"
 #include <functional>
 
@@ -356,6 +360,71 @@ namespace
         SkillLineEntry const* skill = sSkillLineStore.LookupEntry(lowest);
         ChatHandler(player->GetSession()).PSendSysMessage("|cffe6cc80Dedicated Study:|r your {} rises to {}.", skill->name[0], lowestValue + 1);
     }
+
+    // Hasty Hearth: the spells that take a player home (the Hearthstone, Astral Recall, Scrolls of
+    // Recall, the Ruby Slippers, ...).
+    constexpr std::array<uint32, 10> HEARTH_SPELLS = { 556, 8690, 14055, 18034, 22563, 22564, 48129, 60320, 60321, 75136 };
+    constexpr uint32 HEARTH_FLOOR_MS = 5 * MINUTE * IN_MILLISECONDS;
+
+    bool IsHearth(uint32 spellId)
+    {
+        return std::find(HEARTH_SPELLS.begin(), HEARTH_SPELLS.end(), spellId) != HEARTH_SPELLS.end();
+    }
+
+    // The cast spell and the spells sharing its category, which AddSpellAndCategoryCooldowns put
+    // on cooldown with it.
+    std::vector<uint32> HearthCooldownSpells(Player* player, SpellInfo const* spellInfo)
+    {
+        std::vector<uint32> spells = { spellInfo->Id };
+        if (uint32 category = spellInfo->GetCategory())
+        {
+            SpellCategoryStore::const_iterator itr = sSpellsByCategoryStore.find(category);
+            if (itr != sSpellsByCategoryStore.end())
+                for (auto const& [byItem, siblingId] : itr->second)
+                    if (siblingId != spellInfo->Id && (byItem || player->HasSpell(siblingId))
+                        && std::find(spells.begin(), spells.end(), siblingId) == spells.end())
+                        spells.push_back(siblingId);
+        }
+        return spells;
+    }
+
+    // Takes `cut` ms off each of the spells' cooldowns, leaving at least 5 min.
+    void ShortenHearth(Player* player, std::vector<uint32> const& spells, uint32 cut)
+    {
+        uint32 now = GameTime::GetGameTimeMS().count();
+        SpellCooldowns& cooldowns = player->GetSpellCooldownMap();
+        for (uint32 spellId : spells)
+        {
+            auto itr = cooldowns.find(spellId);
+            if (itr == cooldowns.end() || itr->second.end <= now + HEARTH_FLOOR_MS)
+                continue;
+            uint32 take = std::min(cut, itr->second.end - now - HEARTH_FLOOR_MS);
+            itr->second.end -= take;
+            itr->second.maxduration -= std::min(take, itr->second.maxduration);
+        }
+    }
+
+    // The client starts the cooldown its own Spell.dbc names (this realm's patch once made the
+    // Hearthstone's 5 min), so the server's real ones replace it: the time left, or none.
+    void SyncHearth(Player* player, std::vector<uint32> const& spells)
+    {
+        uint32 now = GameTime::GetGameTimeMS().count();
+        SpellCooldowns const& cooldowns = player->GetSpellCooldownMap();
+        PacketCooldowns left;
+        for (uint32 spellId : spells)
+        {
+            auto itr = cooldowns.find(spellId);
+            if (itr != cooldowns.end() && itr->second.end > now)
+                left[spellId] = itr->second.end - now;
+            else
+                player->SendClearCooldown(spellId, player);
+        }
+        if (left.empty())
+            return;
+        WorldPacket data;
+        player->BuildCooldownPacket(data, SPELL_COOLDOWN_FLAG_NONE, left);
+        player->SendDirectMessage(&data);
+    }
 }
 
 namespace Legacy
@@ -487,8 +556,8 @@ namespace Legacy
         // challenges loaded at all (the world SQL is missing), nothing is judged.
         if (Spent(build) && ChallengeCount())
         {
-            uint32 points = SpendablePoints(GetEarned(player->GetSession()->GetAccountId()), data->hardcore);
-            auto [code, message] = Validate(build, points);
+            uint32 points = SpendablePoints(GetEarned(player->GetSession()->GetAccountId()), data->hardcore, CharacterEra(player));
+            auto [code, message] = Validate(build, points, data->hardcore);
             if (!code.empty())
             {
                 SuspendBuild(guid);
@@ -983,11 +1052,32 @@ public:
     }
 };
 
-// Field Medicine, Gourmand, Permanence
+// Field Medicine, Gourmand, Permanence, Hasty Hearth
 class LegacyPerksSpellScript : public AllSpellScript
 {
 public:
-    LegacyPerksSpellScript() : AllSpellScript("LegacyPerksSpellScript", { ALLSPELLHOOK_ON_CALC_MAX_DURATION }) { }
+    LegacyPerksSpellScript() : AllSpellScript("LegacyPerksSpellScript", { ALLSPELLHOOK_ON_CALC_MAX_DURATION, ALLSPELLHOOK_ON_CAST }) { }
+
+    // Runs after Spell::SendSpellCooldown, so the cooldowns are on the player already.
+    void OnSpellCast(Spell* /*spell*/, Unit* caster, SpellInfo const* spellInfo, bool /*skipCheck*/) override
+    {
+        Player* player = caster ? caster->ToPlayer() : nullptr;
+        if (!player || !spellInfo || !IsHearth(spellInfo->Id) || !player->GetSession() || IsBotSession(player->GetSession()))
+            return;
+
+        std::vector<uint32> spells = HearthCooldownSpells(player, spellInfo);
+        if (uint8 rank = Rank(player, PERK_HASTY_HEARTH))
+            ShortenHearth(player, spells, rank * Perks()[PERK_HASTY_HEARTH].perRank * MINUTE * IN_MILLISECONDS);
+        SyncHearth(player, spells);
+
+        // Again once the client has handled SPELL_GO, which starts its own Spell.dbc timer.
+        ObjectGuid guid = player->GetGUID();
+        player->m_Events.AddEventAtOffset([guid, spells]()
+        {
+            if (Player* p = ObjectAccessor::FindConnectedPlayer(guid))
+                SyncHearth(p, spells);
+        }, 150ms);
+    }
 
     void OnCalcMaxDuration(Aura const* aura, int32& maxDuration) override
     {

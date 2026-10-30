@@ -2,15 +2,17 @@
  * mod-legacy: WoW Forever's Legacy system.
  *
  * Challenges done anywhere on an account (a class reaching a level, a profession reaching a
- * skill, a raid's achievement, ...) earn it Legacy points, one each. Every character spends up to
- * Legacy.PointCap of them on perks in three trees: Adventure, Resourcefulness and Professions,
- * and a General row above them (Deep Pockets). Only Talented and Prodigy add combat power, as
- * talent points (mod-talent-per-level must be off: it would count them twice). Perks are
- * picked in the launcher, which reaches the module through the portal over SOAP (`.legacy list` /
- * `.legacy set`).
+ * skill, a raid's achievement, ...) earn it Legacy points, one each. Every character spends them
+ * on perks in three trees: Adventure, Resourcefulness and Professions, and a General row above
+ * them (Deep Pockets, Hasty Hearth). A character's cap is the number of challenges up to its own
+ * era (mod-individual-progression's state): 67 in Classic, 96 in The Burning Crusade, all of them
+ * in Wrath of the Lich King. Only Talented and Prodigy add combat power, as talent points
+ * (mod-talent-per-level must be off: it would count them twice). Perks are picked in the
+ * launcher, which reaches the module through the portal over SOAP (`.legacy list` / `.legacy set`).
  *
- * Hardcore characters (mod-challenges) spend only the points hardcore characters earned; normal
- * characters spend everything the account earned.
+ * Hardcore characters (mod-challenges) spend only the points hardcore characters earned, and only
+ * on Deep Pockets, Talented and Prodigy (24 points, without the Adventure points and Well Rested
+ * those normally need); normal characters spend everything the account earned.
  *
  * Released under the MIT License.
  */
@@ -24,6 +26,7 @@
 #include <string>
 #include <string_view>
 #include <type_traits>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -71,6 +74,7 @@ namespace Legacy
         PERK_DEDICATED_STUDY,
         // General
         PERK_DEEP_POCKETS,
+        PERK_HASTY_HEARTH,
         MAX_PERKS
     };
 
@@ -110,12 +114,31 @@ namespace Legacy
     bool Offered(PerkInfo const& perk);
     // A permanent perk's saved ranks can't be taken back.
     bool Permanent(Perk perk);
+    // Whether a hardcore character may take the perk (Legacy.Hardcore.LimitedPerks): Deep Pockets,
+    // Talented and Prodigy. A hardcore character skips every requirement on perks it can't take.
+    bool HardcoreAllowed(Perk perk);
+    bool HardcoreLimited(bool hardcore);
+
+    enum Era : uint8
+    {
+        ERA_CLASSIC,
+        ERA_TBC,
+        ERA_WOTLK,
+        MAX_ERAS
+    };
+
+    char const* EraName(uint8 era);
 
     struct Config
     {
         bool enabled = true;
-        uint32 pointCap = 16;
+        uint32 pointCap = 0;            // 0: only the era caps
+        bool eraCaps = true;
+        uint32 ipQuestBase = 66000;
+        uint8 tbcState = 8;
+        uint8 wotlkState = 13;
         bool hardcorePool = true;
+        bool hardcoreLimited = true;
         bool announce = true;
         bool deepPockets = false;
     };
@@ -139,7 +162,7 @@ namespace Legacy
 
     // Why `build` isn't allowed with `points` to spend: "" when it is, else a refusal code
     // (points, locked, invalid) and the message for the player.
-    std::pair<std::string, std::string> Validate(Build const& build, uint32 points);
+    std::pair<std::string, std::string> Validate(Build const& build, uint32 points, bool hardcore);
 
     // Challenges.
     struct Earned
@@ -149,7 +172,14 @@ namespace Legacy
     };
 
     Earned GetEarned(uint32 account);
-    uint32 SpendablePoints(Earned const& earned, bool hardcore);
+    // The era a character has reached: an online one from its own rewarded quests, others from the
+    // database. Every era when Legacy.EraCaps.Enable is off.
+    uint8 CharacterEra(Player const* player);
+    std::unordered_map<uint32, uint8> CharacterEras(std::vector<uint32> const& guids);
+    // The most points a character in `era` can spend: the challenges up to that era, and no more
+    // than Legacy.PointCap when that is set.
+    uint32 EraCap(uint8 era);
+    uint32 SpendablePoints(Earned const& earned, bool hardcore, uint8 era);
     bool IsHardcore(uint32 guid);
     bool HardcoreTracked();
 
