@@ -162,6 +162,12 @@ Classic raids, Eastern Kingdoms and Kalimdor, the three PvP factions), **The Bur
 **Wrath of the Lich King 29** (level 80, professions to 450, Northrend Spelunker, the nine Wrath
 raids, Northrend).
 
+The launcher lists them in `sort` order, or easiest first by the `difficulty` column: about the
+level a character does the challenge at (a class level as is; a profession's 150, 225, 300, 375
+and 450 as 15, 25, 45, 65 and 75), with each raid tier a step above the last (Zul'Gurub and Ruins
+of Ahn'Qiraj 61 up to Naxxramas 66; Karazhan 71 up to Sunwell 76; Naxxramas 81 up to Icecrown 86).
+Smaller is easier, and rows with the same value keep their `sort` order.
+
 The rows are data: add, edit or switch them off (`enabled = 0`) and run `.legacy reload`. A
 point earned stays earned, but a challenge that is switched off no longer counts toward the
 total. Rows 100-699 ship with the module and are rewritten whenever its SQL changes, so put your
