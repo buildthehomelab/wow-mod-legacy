@@ -23,7 +23,7 @@ Legacy.Enable = 1
 #    Legacy.EraCaps.Enable
 #        Description: 1: a character spends at most as many points as there are challenges up to
 #                     its own era, from mod-individual-progression's state (with the shipped
-#                     challenges: 67 in Classic, 96 in The Burning Crusade, 125 in Wrath of the
+#                     challenges: 77 in Classic, 107 in The Burning Crusade, 137 in Wrath of the
 #                     Lich King). Each challenge row's `era` says where it belongs. 0: every
 #                     character can spend everything the account earned.
 #        Default:     1
