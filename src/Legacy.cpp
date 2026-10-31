@@ -28,6 +28,15 @@
 #include <unordered_map>
 #include <unordered_set>
 
+// mod-challenges' milestones, for its challenge rows (type 6). Without it, or with a copy from
+// before Milestones(), those rows are skipped.
+#if __has_include("ChallengesApi.h")
+#include "ChallengesApi.h"
+#ifdef CHALLENGES_API_HAS_MILESTONES
+#define LEGACY_HAS_CHALLENGES_API
+#endif
+#endif
+
 namespace
 {
     using namespace Legacy;
@@ -124,6 +133,7 @@ namespace
         CHALLENGE_ALL_ACHIEVEMENTS = 3,
         CHALLENGE_ANY_ACHIEVEMENT = 4,
         CHALLENGE_EXALTED = 5,
+        CHALLENGE_MILESTONE = 6,
     };
 
     struct Challenge
@@ -284,7 +294,17 @@ namespace
         std::unordered_map<uint32, uint32> skills;
         std::unordered_set<uint32> achievements;
         std::unordered_map<uint32, int32> standing;
+        uint16 milestones = 0;  // mod-challenges' challenges whose milestone the character reached
     };
+
+    uint16 ChallengeMilestones([[maybe_unused]] uint32 guid)
+    {
+#ifdef LEGACY_HAS_CHALLENGES_API
+        return Challenges::Milestones(guid);
+#else
+        return 0;
+#endif
+    }
 
     constexpr int32 EXALTED = 42000;
 
@@ -332,6 +352,8 @@ namespace
                         return true;
                 }
                 return false;
+            case CHALLENGE_MILESTONE:
+                return (progress.milestones & challenge.value1) == challenge.value1;
             default:
                 return false;
         }
@@ -767,6 +789,7 @@ namespace Legacy
 
         uint32 account = player->GetSession()->GetAccountId();
         uint32 guid = player->GetGUID().GetCounter();
+        progress.milestones = ChallengeMilestones(guid);
 
         hardcore = hardcore && hardcoreTable && config.hardcorePool;
         std::vector<Fresh> fresh;
@@ -808,6 +831,7 @@ namespace Legacy
                 progress.race = fields[1].Get<uint8>();
                 progress.cls = fields[2].Get<uint8>();
                 progress.level = fields[3].Get<uint8>();
+                progress.milestones = ChallengeMilestones(fields[0].Get<uint32>());
             } while (result->NextRow());
         }
         if (characters.empty())
@@ -929,13 +953,20 @@ namespace Legacy
                             watching.factions.insert(id);
                         }
                         break;
+                    case CHALLENGE_MILESTONE:
+#ifdef LEGACY_HAS_CHALLENGES_API
+                        ok = challenge.value1 != 0;
+#else
+                        ok = false;
+#endif
+                        break;
                     default:
                         ok = false;
                 }
 
                 if (!ok)
                 {
-                    LOG_ERROR("module", "mod-legacy: challenge {} ({}) has an unknown type, class, skill, achievement or faction; skipped.", challenge.id, challenge.name);
+                    LOG_ERROR("module", "mod-legacy: challenge {} ({}) has an unknown type, class, skill, achievement or faction (or needs mod-challenges); skipped.", challenge.id, challenge.name);
                     ++skipped;
                     continue;
                 }

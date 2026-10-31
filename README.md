@@ -27,8 +27,8 @@ is in combat.
 - **Era caps**: each challenge belongs to an era (the `era` column: 0 Classic, 1 The Burning
   Crusade, 2 Wrath of the Lich King). A character can spend at most as many points as there are
   challenges up to its own era, which comes from mod-individual-progression's state (quest
-  66000 + state; 8 and later is The Burning Crusade, 13 and later Wrath). With the 130 challenges
-  that ship with the module that's **70** in Classic, **100** in The Burning Crusade and **130** in
+  66000 + state; 8 and later is The Burning Crusade, 13 and later Wrath). With the 137 challenges
+  that ship with the module that's **77** in Classic, **107** in The Burning Crusade and **137** in
   Wrath. So a Classic character can't spend points its account earned in Outland or Northrend
   until it gets there. `Legacy.EraCaps.Enable = 0` drops the era caps; `Legacy.PointCap` adds a
   flat limit on top (0, none, by default).
@@ -155,16 +155,17 @@ Some perks also work a little differently, because of what the core lets a modul
 | Raids | Each raid's achievement: Onyxia (60), Molten Core, Blackwing Lair, Zul'Gurub, both Ahn'Qiraj, Naxxramas (60), the nine Burning Crusade raids and the nine Wrath raids (10 or 25 player) | 25 |
 | Exploration | Explore Eastern Kingdoms, Kalimdor, Outland and Northrend | 4 |
 | PvP | Exalted with Warsong Gulch, Arathi Basin and Alterac Valley (either side) | 3 |
-| Challenges | mod-challenges' achievements: Immortal, Deathless and Eternal (Hardcore to 60, 70 and 80 without dying), Hambringer (Boaring Adventure to 60) and That Which Has No Life (Boaring Adventure with Exhaustion and Slow XP to 60) | 5 |
+| Challenges | mod-challenges' achievements: Immortal, Deathless and Eternal (Hardcore to 60, 70 and 80 without dying), Hambringer (Boaring Adventure to 60) and That Which Has No Life (Boaring Adventure with Exhaustion and Slow XP to 60); and level 60 in each other challenge: Iron Man, Self-Found, Self-Crafted, Slow XP, Quest XP Only, Item Quality Level and Exhaustion | 12 |
 
-By era: **Classic 70** (levels 20 to 60, professions to 300, Novice to Master Spelunker, the seven
-Classic raids, Eastern Kingdoms and Kalimdor, the three PvP factions, Immortal, Hambringer and That
-Which Has No Life), **The Burning Crusade 30** (level 70, professions to 375, Outland Spelunker,
+By era: **Classic 77** (levels 20 to 60, professions to 300, Novice to Master Spelunker, the seven
+Classic raids, Eastern Kingdoms and Kalimdor, the three PvP factions, Immortal, Hambringer, That
+Which Has No Life and the seven other challenges to 60), **The Burning Crusade 30** (level 70, professions to 375, Outland Spelunker,
 the nine Burning Crusade raids, Outland, Deathless) and **Wrath of the Lich King 30** (level 80,
 professions to 450, Northrend Spelunker, the nine Wrath raids, Northrend, Eternal).
 
-The Challenges rows need mod-challenges, which grants those achievements. Without it they are
-skipped at startup (a log line each) and don't count toward the caps. A Hardcore achievement is
+The Challenges rows need mod-challenges, which grants those achievements and records each
+challenge's milestone (`Challenges.MilestoneLevel`, 60, reached while the challenge still runs, so
+an Iron Man that died on the way doesn't count). Without it they are skipped at startup (a log line each) and don't count toward the caps. A Hardcore achievement is
 earned on the hardcore character, so it also counts toward the points hardcore characters spend.
 
 The launcher lists them in `sort` order, or easiest first by the `difficulty` column: about the
@@ -185,6 +186,7 @@ own rows at 700 or above. Challenge types:
 | 3 | has every achievement | | | achievement ids |
 | 4 | has any of the achievements | | | achievement ids |
 | 5 | is Exalted with any of the factions | | | faction ids |
+| 6 | reached mod-challenges' milestone in every challenge in the mask (1 Hardcore, 2 Iron Man, 4 Self-Found, 8 Self-Crafted, 16 Slow XP, 32 Quest XP Only, 64 Item Quality Level, 128 Boaring Adventure, 256 Exhaustion) | challenge mask | | |
 
 ## Commands
 
@@ -201,7 +203,8 @@ own rows at 700 or above. Challenge types:
 - AzerothCore (WotLK 3.3.5a). Two perks use optional core hooks; see the end of Installation.
 - SOAP enabled on the worldserver, for the launcher's page (the portal runs `.legacy list` and
   `.legacy set` as console commands).
-- Optional: mod-challenges, for the separate hardcore points.
+- Optional: mod-challenges, for the separate hardcore points and the Challenges rows (a build with
+  its `ChallengesApi.h` for the level-60 rows, type 6).
 - Optional: mod-individual-progression, for the era caps (without it, turn
   `Legacy.EraCaps.Enable` off, or every character stays at the Classic cap).
 

@@ -6,6 +6,10 @@
 --   3  a character has every achievement in `list`
 --   4  a character has any achievement in `list`
 --   5  a character is Exalted with any faction in `list`
+--   6  a character reached mod-challenges' milestone in every challenge in the bits of `value1`
+--      (1 Hardcore, 2 Iron Man, 4 Self-Found, 8 Self-Crafted, 16 Slow XP, 32 Quest XP Only,
+--      64 Item Quality Level, 128 Boaring Adventure, 256 Exhaustion): Challenges.MilestoneLevel
+--      while still running it
 -- `era` is the expansion the challenge belongs to (0 Classic, 1 The Burning Crusade, 2 Wrath of
 -- the Lich King). A character spends at most as many points as there are challenges up to its
 -- own era (mod-individual-progression's state), so a Classic character can't spend points its
@@ -14,8 +18,8 @@
 -- is easier; rows with the same value keep `sort` order). Adding, removing or editing rows is safe at any time
 -- (`.legacy reload`): points already earned stay with the account, and a row that is switched
 -- off stops counting. Rows 100-699 ship with the module and are rewritten whenever this file
--- changes: put your own rows at 700 or above. The Challenges rows (651-655) are mod-challenges'
--- achievements: without that module they don't exist, so those rows are skipped at startup.
+-- changes: put your own rows at 700 or above. The Challenges rows (651-662) need mod-challenges:
+-- without it their achievements and milestones don't exist, so they are skipped at startup.
 CREATE TABLE IF NOT EXISTS `mod_legacy_challenge` (
     `id` SMALLINT UNSIGNED NOT NULL,
     `category` VARCHAR(32) NOT NULL,
@@ -183,7 +187,14 @@ INSERT INTO `mod_legacy_challenge` (`id`, `category`, `name`, `description`, `ty
 (652, 'Challenges', 'Deathless', 'Reach level 70 in the Hardcore challenge without dying: the achievement Deathless.', 3, 0, 0, '9261', 126, 1, 76),
 (653, 'Challenges', 'Eternal', 'Reach level 80 in the Hardcore challenge without dying: the achievement Eternal.', 3, 0, 0, '9262', 127, 2, 86),
 (654, 'Challenges', 'Hambringer', 'Reach level 60 in Boaring Adventure, killing nothing but boars: the achievement Hambringer.', 3, 0, 0, '9271', 128, 0, 64),
-(655, 'Challenges', 'That Which Has No Life', 'Reach level 60 in Boaring Adventure together with Exhaustion and Slow XP: the achievement That Which Has No Life.', 3, 0, 0, '9272', 129, 0, 66);
+(655, 'Challenges', 'That Which Has No Life', 'Reach level 60 in Boaring Adventure together with Exhaustion and Slow XP: the achievement That Which Has No Life.', 3, 0, 0, '9272', 129, 0, 66),
+(656, 'Challenges', 'Iron Man: Level 60', 'Reach level 60 in the Iron Man challenge without dying.', 6, 2, 0, '', 130, 0, 66),
+(657, 'Challenges', 'Self-Found: Level 60', 'Reach level 60 in the Self-Found challenge.', 6, 4, 0, '', 131, 0, 64),
+(658, 'Challenges', 'Self-Crafted: Level 60', 'Reach level 60 in the Self-Crafted challenge.', 6, 8, 0, '', 132, 0, 64),
+(659, 'Challenges', 'Slow XP: Level 60', 'Reach level 60 in the Slow XP challenge.', 6, 16, 0, '', 133, 0, 62),
+(660, 'Challenges', 'Quest XP Only: Level 60', 'Reach level 60 in the Quest XP Only challenge.', 6, 32, 0, '', 134, 0, 63),
+(661, 'Challenges', 'Item Quality Level: Level 60', 'Reach level 60 in the Item Quality Level challenge.', 6, 64, 0, '', 135, 0, 62),
+(662, 'Challenges', 'Exhaustion: Level 60', 'Reach level 60 in the Exhaustion challenge.', 6, 256, 0, '', 136, 0, 61);
 
 -- Hidden passive auras the client never sees (Attributes 0x40 passive + 0x80 hidden). The
 -- module sets their amounts:
