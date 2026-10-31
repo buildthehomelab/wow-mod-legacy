@@ -137,6 +137,7 @@ namespace
         uint32 value2 = 0;
         std::vector<uint32> list;
         uint8 era = ERA_CLASSIC;
+        uint16 difficulty = 0;
     };
 
     struct ProfessionDefinition
@@ -880,7 +881,7 @@ namespace Legacy
         std::vector<Challenge> loaded;
         Watched watching;
         uint32 skipped = 0;
-        if (QueryResult result = WorldDatabase.Query("SELECT id, category, name, description, type, value1, value2, list, era "
+        if (QueryResult result = WorldDatabase.Query("SELECT id, category, name, description, type, value1, value2, list, era, difficulty "
             "FROM mod_legacy_challenge WHERE enabled = 1 ORDER BY sort, id"))
         {
             do
@@ -896,6 +897,7 @@ namespace Legacy
                 challenge.value2 = fields[6].Get<uint32>();
                 challenge.list = ParseList(fields[7].Get<std::string>());
                 challenge.era = std::min<uint8>(fields[8].Get<uint8>(), ERA_WOTLK);
+                challenge.difficulty = fields[9].Get<uint16>();
 
                 bool ok = true;
                 switch (challenge.type)
@@ -1059,10 +1061,10 @@ namespace Legacy
                 // unlinked one keeps its row with the name cleared).
                 by = name != names.end() && !name->second.empty() ? name->second : "a deleted character";
             }
-            json += Acore::StringFormat("{}{{\"id\":{},\"category\":{},\"name\":{},\"description\":{},\"done\":{},\"hardcore\":{},\"by\":{},\"at\":{}}}",
+            json += Acore::StringFormat("{}{{\"id\":{},\"category\":{},\"name\":{},\"description\":{},\"done\":{},\"hardcore\":{},\"by\":{},\"at\":{},\"difficulty\":{}}}",
                 i ? "," : "", c.id, JsonString(c.category), JsonString(c.name), JsonString(c.description),
                 isDone ? "true" : "false", isDone && itr->second.hardcoreGuid ? "true" : "false",
-                JsonString(by), isDone ? itr->second.at : 0);
+                JsonString(by), isDone ? itr->second.at : 0, c.difficulty);
         }
         return json + "]";
     }
