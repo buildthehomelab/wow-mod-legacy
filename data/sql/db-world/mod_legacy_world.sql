@@ -14,7 +14,8 @@
 -- is easier; rows with the same value keep `sort` order). Adding, removing or editing rows is safe at any time
 -- (`.legacy reload`): points already earned stay with the account, and a row that is switched
 -- off stops counting. Rows 100-699 ship with the module and are rewritten whenever this file
--- changes: put your own rows at 700 or above.
+-- changes: put your own rows at 700 or above. The Challenges rows (651-655) are mod-challenges'
+-- achievements: without that module they don't exist, so those rows are skipped at startup.
 CREATE TABLE IF NOT EXISTS `mod_legacy_challenge` (
     `id` SMALLINT UNSIGNED NOT NULL,
     `category` VARCHAR(32) NOT NULL,
@@ -177,7 +178,12 @@ INSERT INTO `mod_legacy_challenge` (`id`, `category`, `name`, `description`, `ty
 (504, 'Exploration', 'Explore Northrend', 'Earn the achievement Explore Northrend.', 3, 0, 0, '45', 121, 2, 78),
 (601, 'PvP', 'Exalted: Warsong Gulch', 'Reach Exalted with the Silverwing Sentinels or the Warsong Outriders.', 5, 0, 0, '890,889', 122, 0, 65),
 (602, 'PvP', 'Exalted: Arathi Basin', 'Reach Exalted with the League of Arathor or the Defilers.', 5, 0, 0, '509,510', 123, 0, 64),
-(603, 'PvP', 'Exalted: Alterac Valley', 'Reach Exalted with the Stormpike Guard or the Frostwolf Clan.', 5, 0, 0, '730,729', 124, 0, 61);
+(603, 'PvP', 'Exalted: Alterac Valley', 'Reach Exalted with the Stormpike Guard or the Frostwolf Clan.', 5, 0, 0, '730,729', 124, 0, 61),
+(651, 'Challenges', 'Immortal', 'Reach level 60 in the Hardcore challenge without dying: the achievement Immortal.', 3, 0, 0, '9260', 125, 0, 66),
+(652, 'Challenges', 'Deathless', 'Reach level 70 in the Hardcore challenge without dying: the achievement Deathless.', 3, 0, 0, '9261', 126, 1, 76),
+(653, 'Challenges', 'Eternal', 'Reach level 80 in the Hardcore challenge without dying: the achievement Eternal.', 3, 0, 0, '9262', 127, 2, 86),
+(654, 'Challenges', 'Hambringer', 'Reach level 60 in Boaring Adventure, killing nothing but boars: the achievement Hambringer.', 3, 0, 0, '9271', 128, 0, 64),
+(655, 'Challenges', 'That Which Has No Life', 'Reach level 60 in Boaring Adventure together with Exhaustion and Slow XP: the achievement That Which Has No Life.', 3, 0, 0, '9272', 129, 0, 66);
 
 -- Hidden passive auras the client never sees (Attributes 0x40 passive + 0x80 hidden). The
 -- module sets their amounts:
