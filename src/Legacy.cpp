@@ -75,6 +75,8 @@ namespace
             "You start earning talent points before level 10, up to the same total at the top level." },
         { PERK_PRODIGY, "prodigy", TREE_ADVENTURE, "Prodigy", "spell_arcane_mindmastery", 9, 3, 2, 15, PERK_TALENTED, 1,
             "You have more talent points once you start earning them." },
+        { PERK_SOUL_TETHER, "soul_tether", TREE_ADVENTURE, "Soul Tether", "spell_nature_reincarnation", 3, 3, 1, 15, NO_PERK, 0,
+            "Releasing your spirit in a dungeon or raid brings you back to life at its entrance, unless a boss fight is running." },
 
         { PERK_FOR_GREAT_HONOR, "for_great_honor", TREE_RESOURCEFULNESS, "For Great Honor", "inv_jewelry_trinketpvp_01", 5, 0, 0, 0, NO_PERK, 2,
             "You gain more honor from honorable kills." },
@@ -498,6 +500,8 @@ namespace Legacy
                 return Acore::StringFormat("You start earning talent points at level {} instead of 10, up to the same total at the top level. Taking ranks back resets your talents if you have spent more points than you have left.", 10 - rank);
             case PERK_PRODIGY:
                 return Acore::StringFormat("You have {} more talent point{} once you start earning them. Taking ranks back resets your talents if you have spent more points than you have left.", value, value == 1 ? "" : "s");
+            case PERK_SOUL_TETHER:
+                return Acore::StringFormat("Releasing your spirit in a dungeon or raid brings you back to life at its entrance, with {}% of your health and mana. During a boss fight, you get 15 sec for it to end, then go to the graveyard as usual.", Thirds(rank));
             case PERK_FOR_GREAT_HONOR:
                 return Acore::StringFormat("You gain {}% more honor from honorable kills.", value);
             case PERK_GOURMAND:
@@ -1130,6 +1134,7 @@ public:
         LoadRanks();
         LoadDone();
         LoadReagentMasks();
+        LoadEntrances();
     }
 };
 

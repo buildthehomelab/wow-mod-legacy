@@ -23,6 +23,9 @@
  *   give, and covers Herbalism too.
  * - Hasty Hearth is new: the realm's Hearthstone is back at 30 min, and each rank takes 5 min off
  *   it (and off the other ways home, never below 5 min).
+ * - Soul Tether is new: a release in a dungeon or raid comes back to life at the entrance instead
+ *   of going to a graveyard. Only with no boss fight running: the ghost doesn't stay in the
+ *   instance through one, where boss scripts and the core's raid entry rule expect it gone.
  * - Well Rested needs the core's OnPlayerGainRestBonus / OnPlayerGetRestBonusMax hooks, and
  *   Frequent Flier the OnPlayerTaxiCostDiscount / OnPlayerTaxiFlightSpeed hooks. On a core
  *   without them Well Rested and the faster flights do nothing, and only a flight's first leg is
@@ -42,6 +45,7 @@
 #include "Formulas.h"
 #include "GameObject.h"
 #include "GameTime.h"
+#include "InstanceScript.h"
 #include "Item.h"
 #include "Log.h"
 #include "LootMgr.h"
@@ -77,6 +81,10 @@ namespace
     constexpr uint32 THRILL_TICK_MS = 2000;
     constexpr Seconds QUICK_AND_DEAD_WINDOW = 60s;
     constexpr Seconds SNAPSHOT_STALE = 3s;
+    constexpr uint32 SOUL_TETHER_GRACE_MS = 15000;      // under the 30 sec before a corpse can be reclaimed (Death.CorpseReclaimDelay.PvE = 1)
+    constexpr uint32 MAP_EYE_OF_ETERNITY = 616;
+    constexpr uint32 MAP_TRIAL_OF_THE_CHAMPION = 650;
+    constexpr uint32 MAP_HALLS_OF_REFLECTION = 668;
 
     uint32 ReagentSpell(uint8 cls)
     {
@@ -84,6 +92,9 @@ namespace
     }
 
     std::array<bool, MAX_CLASSES> reagentMask = {};
+
+    // Soul Tether: the ways into each map. Filled at startup, read from any map thread after that.
+    std::unordered_map<uint32, std::vector<Position>> entrances;
 
     // Per player. Touched from that player's map update, or from the world thread, which never
     // runs alongside the map updates.
@@ -120,6 +131,16 @@ namespace
         std::vector<std::pair<ObjectGuid, uint32>> snapshot;
         Seconds snapshotAt = 0s;
         bool restore = false;
+
+        // Soul Tether: `released` lasts from the release to the repop right after it. `tethered`
+        // lasts from there until the character is back to life at the entrance, or takes the
+        // normal repop after all.
+        bool released = false;
+        bool tethered = false;
+        bool atEntrance = false;
+        uint32 tetherMap = 0;
+        uint32 tetherInstance = 0;
+        uint32 tetherWait = 0;
     };
 
     PerkData* DataOf(Player* player)
@@ -137,6 +158,103 @@ namespace
     {
         Map const* map = player->FindMap();
         return map && map->IsBattlegroundOrArena();
+    }
+
+    // The normal release in three places: Halls of Reflection wipes its waves when anyone is far
+    // from the middle, ghosts included; the Eye of Eternity's entrance has no floor once Malygos
+    // has destroyed the platform; and the Trial of the Champion's entrance is inside the arena,
+    // and its Grand Champions fight is never marked as running.
+    bool SoulTetherWorksIn(Player const* player)
+    {
+        Map const* map = player->FindMap();
+        if (!map || !map->IsDungeon())
+            return false;
+        uint32 id = map->GetId();
+        return id != MAP_EYE_OF_ETERNITY && id != MAP_TRIAL_OF_THE_CHAMPION && id != MAP_HALLS_OF_REFLECTION;
+    }
+
+    // Only as good as the instance script: some 5-player dungeons keep no boss states and a few
+    // raid fights never set one (Karazhan's chess), so there a release comes back at once. The
+    // Vault of Archavon also says yes during Wintergrasp and the 10 min before it.
+    bool EncounterInProgress(Player const* player)
+    {
+        InstanceScript* instance = player->GetInstanceScript();
+        return instance && instance->IsEncounterInProgress();
+    }
+
+    // The nearest way in to where the player died: Stratholme and Dire Maul have several.
+    Position const* NearestEntrance(Player const* player)
+    {
+        auto itr = entrances.find(player->GetMapId());
+        if (itr == entrances.end())
+            return nullptr;
+
+        Position const* nearest = nullptr;
+        float nearestDist = 0.0f;
+        for (Position const& entrance : itr->second)
+        {
+            float dist = player->GetExactDistSq(&entrance);
+            if (!nearest || dist < nearestDist)
+            {
+                nearest = &entrance;
+                nearestDist = dist;
+            }
+        }
+        return nearest;
+    }
+
+    // Second Wind, Gourmand and Soul Tether go in thirds.
+    uint32 Thirds(uint8 rank)
+    {
+        return rank >= 3 ? 100 : rank * 33 + (rank == 2 ? 1 : 0);
+    }
+
+    // Soul Tether, from the player's own update. The hook on the repop only starts this: the near
+    // teleport waits for the client, and nothing should wake up beside the corpse. Every way out
+    // that isn't a resurrection is the normal repop, so no ghost stays behind in the instance.
+    void UpdateTether(Player* player, PerkData* data, uint32 diff)
+    {
+        if (player->IsAlive())
+        {
+            data->tethered = false;
+            return;
+        }
+
+        data->tetherWait = data->tetherWait > diff ? data->tetherWait - diff : 0;
+        if (player->IsBeingTeleportedFar() || (player->IsBeingTeleportedNear() && data->tetherWait))
+            return;
+
+        uint8 rank = GetConfig().enabled ? Rank(player, PERK_SOUL_TETHER) : 0;
+        bool ready = rank && player->GetMapId() == data->tetherMap && player->GetInstanceId() == data->tetherInstance;
+        bool clear = ready && !EncounterInProgress(player) && !player->HasPreventResurectionAura();
+
+        if (data->atEntrance)
+        {
+            // A fight pulled while the ghost was on its way counts too.
+            if (clear && !player->IsBeingTeleported())
+            {
+                data->tethered = false;
+                player->ResurrectPlayer(Thirds(rank) / 100.0f, false);
+                player->SpawnCorpseBones();
+                player->RemovePlayerFlag(PLAYER_FLAGS_IS_OUT_OF_BOUNDS);
+                return;
+            }
+        }
+        else if (clear)
+        {
+            Position const* entrance = NearestEntrance(player);
+            if (entrance && player->TeleportTo(player->GetMapId(), entrance->GetPositionX(), entrance->GetPositionY(), entrance->GetPositionZ(), entrance->GetOrientation()))
+            {
+                data->atEntrance = true;
+                data->tetherWait = SOUL_TETHER_GRACE_MS;
+                return;
+            }
+        }
+        else if (ready && data->tetherWait)
+            return;
+
+        data->tethered = false;
+        player->RepopAtGraveyard();
     }
 
     // The perk's number (percent, seconds) at the player's rank.
@@ -157,12 +275,6 @@ namespace
                 return true;
         }
         return false;
-    }
-
-    // Second Wind and Gourmand go in thirds.
-    uint32 Thirds(uint8 rank)
-    {
-        return rank >= 3 ? 100 : rank * 33 + (rank == 2 ? 1 : 0);
     }
 
     // Guard so items the perks hand out don't trigger the perks again.
@@ -503,6 +615,28 @@ namespace Legacy
             Keep(player, ReagentSpell(cls), Rank(player, PERK_REAGENT_ECONOMY) > 0, 0);
     }
 
+    // Ways in from outdoors win over exits from another instance (Blackwing Lair's lands deep in
+    // Blackrock Spire). Teleports inside a map don't count.
+    void LoadEntrances()
+    {
+        entrances.clear();
+        std::unordered_map<uint32, std::vector<Position>> fromInstance;
+        if (QueryResult result = WorldDatabase.Query("SELECT a.map, t.target_map, t.target_position_x, t.target_position_y, t.target_position_z, t.target_orientation "
+            "FROM areatrigger_teleport t JOIN areatrigger a ON a.entry = t.ID WHERE a.map <> t.target_map"))
+        {
+            do
+            {
+                Field* fields = result->Fetch();
+                MapEntry const* source = sMapStore.LookupEntry(fields[0].Get<uint32>());
+                auto& store = source && source->IsContinent() ? entrances : fromInstance;
+                store[fields[1].Get<uint32>()].emplace_back(fields[2].Get<float>(), fields[3].Get<float>(), fields[4].Get<float>(), fields[5].Get<float>());
+            } while (result->NextRow());
+        }
+        for (auto& [map, positions] : fromInstance)
+            entrances.try_emplace(map, std::move(positions));
+        LOG_INFO("module", "mod-legacy: entrances loaded for {} maps for Soul Tether.", entrances.size());
+    }
+
     // Which class spells need only reagents a vendor sells: their spell family flags go in that
     // class's Reagent Economy aura, minus any flag a spell with another reagent (a Soul Shard)
     // also uses.
@@ -605,6 +739,7 @@ public:
         PLAYERHOOK_ON_PLAYER_LEAVE_COMBAT,
         PLAYERHOOK_ON_PLAYER_RELEASED_GHOST,
         PLAYERHOOK_ON_PLAYER_RESURRECT,
+        PLAYERHOOK_CAN_REPOP_AT_GRAVEYARD,
         PLAYERHOOK_ON_CREATURE_KILL,
         PLAYERHOOK_ON_CREATURE_KILLED_BY_PET,
         PLAYERHOOK_ON_SPELL_CAST,
@@ -642,10 +777,13 @@ public:
 
     void OnPlayerUpdate(Player* player, uint32 diff) override
     {
+        PerkData* data = DataOf(player);
+
+        if (data->tethered)
+            UpdateTether(player, data, diff);
+
         if (!GetConfig().enabled)
             return;
-
-        PerkData* data = DataOf(player);
 
         // Thrill of Adventure
         if (data->thrillTicks)
@@ -808,11 +946,39 @@ public:
             RefreshPerks(player);
     }
 
-    // The Quick and the Dead: ghost speed.
+    // The Quick and the Dead: ghost speed. Soul Tether: the repop that follows.
     void OnPlayerReleasedGhost(Player* player) override
     {
         if (GetConfig().enabled && !IsBotSession(player->GetSession()))
+        {
             RefreshPerks(player);
+            DataOf(player)->released = true;
+        }
+    }
+
+    // Soul Tether. Only the repop right after a release counts: the core also repops to get a
+    // character out of an instance (a weekly reset, a declined lock, leaving the group), and those
+    // win. So does a logout, which can't wait for a teleport to finish.
+    bool OnPlayerCanRepopAtGraveyard(Player* player) override
+    {
+        PerkData* data = DataOf(player);
+        bool released = data->released;
+        data->released = false;
+        data->tethered = false;
+
+        if (!GetConfig().enabled || !released || player->IsAlive() || player->GetSession()->PlayerLogout() || !SoulTetherWorksIn(player)
+            || !Rank(player, PERK_SOUL_TETHER) || !NearestEntrance(player))
+            return true;
+
+        data->tethered = true;
+        data->atEntrance = false;
+        data->tetherMap = player->GetMapId();
+        data->tetherInstance = player->GetInstanceId();
+        data->tetherWait = SOUL_TETHER_GRACE_MS;
+
+        if (EncounterInProgress(player))
+            ChatHandler(player->GetSession()).SendSysMessage("|cffe6cc80Legacy:|r a boss fight is running. If it isn't over in 15 sec, you go to the graveyard as usual. To come back at the entrance, release after it ends.");
+        return false;
     }
 
     void OnPlayerResurrect(Player* player, float /*restorePercent*/, bool& applySickness) override

@@ -93,6 +93,18 @@ back ("There were problems with equipping item(s).").
 | Summoning Stone | 1 | Raid Finder's Summon to Stone takes you to the raid's meeting stone from anywhere (mod-raid-finder reads this perk). Without it you travel there yourself; Gather Bots at the stone still brings your raid's bots. |
 | Talented | 5 | Talent points start one level earlier (level 5 at 5/5), up to the same total at the top level (71 at 80). Needs Well Rested 5/5. |
 | Prodigy | 9 | +1 talent point once talent points have started (80 at 80 with 9/9). Fourth row (15 points in Adventure); needs Talented 5/5. |
+| Soul Tether | 3 | Releasing your spirit in a dungeon or raid brings you back to life at its entrance, with 33/67/100% of your health and mana. Fourth row (15 points in Adventure). |
+
+Soul Tether uses the way in nearest to you (`areatrigger_teleport`, outdoor ones first). If a boss
+fight is running when you release, or starts before you land, you get the normal release instead:
+the graveyard, and the core's own rules for coming back. At the release you get 15 seconds for the
+fight to end first. An unreleased body has no such limit, so waiting for the end of a fight costs
+nothing. Boss fights are known from the instance script's boss states; some 5-player dungeons keep
+none and a few raid fights never set one (Karazhan's chess), so there you come back at once. The
+Vault of Archavon counts as a boss fight during Wintergrasp and the 10 minutes before it. Halls of
+Reflection, the Eye of Eternity and the Trial of the Champion always get the normal release, and so
+does a map with no way in (a delve). Logging out while dead also takes the normal way to the
+graveyard.
 
 Talented and Prodigy change the core's talent point count, so run them without
 mod-talent-per-level (or with `TalentPerLevel.Enable = 0`): it would add them on top of its own
