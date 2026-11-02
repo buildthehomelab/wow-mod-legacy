@@ -72,6 +72,7 @@ namespace Legacy
         PERK_BARTERING,
         PERK_SALVAGER,
         PERK_DEDICATED_STUDY,
+        PERK_SWIFT_GATHERER,
         // General
         PERK_DEEP_POCKETS,
         PERK_HASTY_HEARTH,

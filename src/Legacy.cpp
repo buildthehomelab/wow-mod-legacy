@@ -105,6 +105,8 @@ namespace
             "A chance of one more material when you disenchant, prospect or mill." },
         { PERK_DEDICATED_STUDY, "dedicated_study", TREE_PROFESSIONS, "Dedicated Study", "inv_misc_book_09", 1, 2, 1, 10, NO_PERK, 1,
             "Once a day, your lowest profession (primary or secondary) that isn't at its maximum gains 1 skill." },
+        { PERK_SWIFT_GATHERER, "swift_gatherer", TREE_PROFESSIONS, "Swift Gatherer", "trade_mining", 5, 2, 0, 10, NO_PERK, 5,
+            "Mining, Herbalism and Skinning take less time." },
 
         { PERK_DEEP_POCKETS, "deep_pockets", TREE_GENERAL, "Deep Pockets", "inv_misc_bag_felclothbag", 10, 0, 0, 0, NO_PERK, 1,
             "The bags in your four bag slots hold more. Permanent: a saved rank can't be taken back." },
@@ -526,6 +528,8 @@ namespace Legacy
                 return Acore::StringFormat("A {}% chance of one more material when you disenchant, prospect or mill.", value);
             case PERK_DEDICATED_STUDY:
                 return "Once a day, your lowest profession (primary or secondary) that isn't at its maximum gains 1 skill. Once all of them are, it does nothing.";
+            case PERK_SWIFT_GATHERER:
+                return Acore::StringFormat("Mining, Herbalism and Skinning take {}% less time.", value);
             case PERK_DEEP_POCKETS:
                 return Acore::StringFormat("Each bag in your four bag slots has {} more slot{} (36 at most). Permanent: once saved, this rank can't be taken back.",
                     value, value == 1 ? "" : "s");
