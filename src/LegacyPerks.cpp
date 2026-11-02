@@ -19,6 +19,8 @@
  * - The Quick and the Dead refunds what a helpful spell took just after the cast, so a spell
  *   still needs the mana to start.
  * - Working Overtime is a second skill-up roll, so at orange recipes it can give two points.
+ * - Swift Gatherer is new: it takes over the faster gathering a pick or knife in the bags used to
+ *   give, and covers Herbalism too.
  * - Hasty Hearth is new: the realm's Hearthstone is back at 30 min, and each rank takes 5 min off
  *   it (and off the other ways home, never below 5 min).
  * - Well Rested needs the core's OnPlayerGainRestBonus / OnPlayerGetRestBonusMax hooks, and
@@ -141,6 +143,20 @@ namespace
     uint32 Percent(Player const* player, Perk perk)
     {
         return Rank(player, perk) * Perks()[perk].perRank;
+    }
+
+    // Swift Gatherer: herb gathering, mining and skinning, of nodes and corpses alike. An effect's
+    // skinning kind is 0 to 2 for those; 3 is Engineering's salvaging.
+    bool IsGathering(SpellInfo const* spell)
+    {
+        for (SpellEffectInfo const& effect : spell->Effects)
+        {
+            if (effect.Effect == SPELL_EFFECT_SKINNING && effect.MiscValue <= 2)
+                return true;
+            if (effect.Effect == SPELL_EFFECT_OPEN_LOCK && (effect.MiscValue == LOCKTYPE_HERBALISM || effect.MiscValue == LOCKTYPE_MINING))
+                return true;
+        }
+        return false;
     }
 
     // Second Wind and Gourmand go in thirds.
@@ -1056,7 +1072,26 @@ public:
 class LegacyPerksSpellScript : public AllSpellScript
 {
 public:
-    LegacyPerksSpellScript() : AllSpellScript("LegacyPerksSpellScript", { ALLSPELLHOOK_ON_CALC_MAX_DURATION, ALLSPELLHOOK_ON_CAST }) { }
+    LegacyPerksSpellScript() : AllSpellScript("LegacyPerksSpellScript", { ALLSPELLHOOK_ON_CALC_MAX_DURATION, ALLSPELLHOOK_ON_CAST, ALLSPELLHOOK_ON_PREPARE }) { }
+
+    // Swift Gatherer. Right after Spell::prepare: the cast bar has been sent with the full time.
+    void OnSpellPrepare(Spell* spell, Unit* caster, SpellInfo const* spellInfo) override
+    {
+        if (!caster || !caster->IsPlayer() || !IsGathering(spellInfo) || spell->getState() != SPELL_STATE_PREPARING)
+            return;
+
+        uint32 pct = Percent(caster->ToPlayer(), PERK_SWIFT_GATHERER);
+        int32 full = spell->GetCastTime();
+        if (!pct || full <= 0)
+            return;
+
+        // m_casttime is protected and nothing sets it from outside. A class derived from Spell
+        // may name the member, and a pointer to it works on any Spell.
+        struct Access : Spell { using Spell::m_casttime; };
+        spell->*(&Access::m_casttime) = std::max<int32>(int32(int64(full) * (100 - pct) / 100), 1);
+        spell->ReSetTimer();
+        spell->SendSpellStart();
+    }
 
     // Runs after Spell::SendSpellCooldown, so the cooldowns are on the player already.
     void OnSpellCast(Spell* /*spell*/, Unit* caster, SpellInfo const* spellInfo, bool /*skipCheck*/) override

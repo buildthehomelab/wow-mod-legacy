@@ -123,11 +123,13 @@ talent reset, like after a level-down. Bots have no perks and keep the core's co
 | Bartering | 2 | Vendor prices and repairs 5% lower. |
 | Salvager | 3 | 5% chance of one more material when disenchanting, prospecting or milling. |
 | Dedicated Study | 1 | Once a day, your lowest profession that isn't at its maximum gains 1 skill. |
+| Swift Gatherer | 5 | Mining, Herbalism and Skinning take 5% less time. |
 
 ### Changes from WoW Forever
 
 Four of WoW Forever's perks rely on things 3.3.5 doesn't have, or that already exist on this
-server in another form. Explorer's Stride and Prodigy are this realm's own additions to Adventure.
+server in another form. Explorer's Stride and Prodigy are this realm's own additions to Adventure,
+and Swift Gatherer to Professions.
 
 - **Field Guide** → **Second Wind**: there are no camps.
 - **Bountiful Harvest** doubles a gather instead of adding "Scarce" materials.
