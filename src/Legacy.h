@@ -56,6 +56,7 @@ namespace Legacy
         PERK_SUMMONING_STONE,
         PERK_TALENTED,
         PERK_PRODIGY,
+        PERK_SOUL_TETHER,
         // Resourcefulness
         PERK_FOR_GREAT_HONOR,
         PERK_GOURMAND,
@@ -229,6 +230,7 @@ namespace Legacy
     // the four bag slots (the perk's, when not given).
     void UpdateBags(Player* player, Optional<uint32> extra = std::nullopt);
     void LoadReagentMasks();
+    void LoadEntrances();
     void OnLogin(Player* player);
 }
 
