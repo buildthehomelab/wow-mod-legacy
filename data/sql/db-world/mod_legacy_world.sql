@@ -18,8 +18,9 @@
 -- is easier; rows with the same value keep `sort` order). Adding, removing or editing rows is safe at any time
 -- (`.legacy reload`): points already earned stay with the account, and a row that is switched
 -- off stops counting. Rows 100-699 ship with the module and are rewritten whenever this file
--- changes: put your own rows at 700 or above. The Challenges rows (651-662) need mod-challenges:
--- without it their achievements and milestones don't exist, so they are skipped at startup.
+-- changes: put your own rows at 700 or above. The Challenges rows (651-662) need mod-challenges,
+-- and 663 needs mod-nemesis: without them their achievements and milestones don't exist, so they
+-- are skipped at startup.
 CREATE TABLE IF NOT EXISTS `mod_legacy_challenge` (
     `id` SMALLINT UNSIGNED NOT NULL,
     `category` VARCHAR(32) NOT NULL,
@@ -194,7 +195,8 @@ INSERT INTO `mod_legacy_challenge` (`id`, `category`, `name`, `description`, `ty
 (659, 'Challenges', 'Slow XP: Level 60', 'Reach level 60 in the Slow XP challenge.', 6, 16, 0, '', 133, 0, 62),
 (660, 'Challenges', 'Quest XP Only: Level 60', 'Reach level 60 in the Quest XP Only challenge.', 6, 32, 0, '', 134, 0, 63),
 (661, 'Challenges', 'Item Quality Level: Level 60', 'Reach level 60 in the Item Quality Level challenge.', 6, 64, 0, '', 135, 0, 62),
-(662, 'Challenges', 'Exhaustion: Level 60', 'Reach level 60 in the Exhaustion challenge.', 6, 256, 0, '', 136, 0, 61);
+(662, 'Challenges', 'Exhaustion: Level 60', 'Reach level 60 in the Exhaustion challenge.', 6, 256, 0, '', 136, 0, 61),
+(663, 'Challenges', 'Bane of the Undying', 'Defeat your nemesis at its last rank.', 3, 0, 0, '9510', 137, 0, 66);
 
 -- Hidden passive auras the client never sees (Attributes 0x40 passive + 0x80 hidden). The
 -- module sets their amounts:
