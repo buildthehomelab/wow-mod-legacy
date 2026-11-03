@@ -830,7 +830,7 @@ namespace Legacy
             return;
 
         std::map<uint32, Progress> characters;
-        if (QueryResult result = CharacterDatabase.Query("SELECT guid, race, class, level FROM characters WHERE account = {}", account))
+        if (QueryResult result = CharacterDatabase.Query("SELECT guid, race, class, level FROM characters WHERE account = {} AND " SQL_NOT_HOME_VIEWER, account))
         {
             do
             {
