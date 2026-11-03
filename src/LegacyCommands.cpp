@@ -47,8 +47,8 @@ namespace
     {
         std::vector<Character> characters;
         QueryResult result = onlyGuid
-            ? CharacterDatabase.Query("SELECT guid, name, race, class, gender, level FROM characters WHERE account = {} AND guid = {}", account, onlyGuid)
-            : CharacterDatabase.Query("SELECT guid, name, race, class, gender, level FROM characters WHERE account = {} ORDER BY guid", account);
+            ? CharacterDatabase.Query("SELECT guid, name, race, class, gender, level FROM characters WHERE account = {} AND guid = {} AND " SQL_NOT_HOME_VIEWER, account, onlyGuid)
+            : CharacterDatabase.Query("SELECT guid, name, race, class, gender, level FROM characters WHERE account = {} AND " SQL_NOT_HOME_VIEWER " ORDER BY guid", account);
         if (result)
         {
             do
