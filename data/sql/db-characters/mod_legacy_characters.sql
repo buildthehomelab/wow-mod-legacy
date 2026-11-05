@@ -27,3 +27,23 @@ CREATE TABLE IF NOT EXISTS `mod_legacy_character` (
     `study_at` INT UNSIGNED NOT NULL DEFAULT 0 COMMENT 'unix time',
     PRIMARY KEY (`guid`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='mod-legacy: per-character state';
+
+-- Second Home: where a character's Second Home stone takes it.
+CREATE TABLE IF NOT EXISTS `mod_legacy_home` (
+    `guid` INT UNSIGNED NOT NULL COMMENT 'characters.guid',
+    `map` SMALLINT UNSIGNED NOT NULL,
+    `x` FLOAT NOT NULL,
+    `y` FLOAT NOT NULL,
+    `z` FLOAT NOT NULL,
+    `o` FLOAT NOT NULL,
+    PRIMARY KEY (`guid`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='mod-legacy: Second Home per character';
+
+-- Second Chance: when each boss buff that came back after a death runs out, in seconds of the
+-- character's /played time. The same buff doesn't come back again; a new one runs out later.
+CREATE TABLE IF NOT EXISTS `mod_legacy_second_chance` (
+    `guid` INT UNSIGNED NOT NULL COMMENT 'characters.guid',
+    `spell` INT UNSIGNED NOT NULL,
+    `expires_played` INT UNSIGNED NOT NULL,
+    PRIMARY KEY (`guid`, `spell`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='mod-legacy: Second Chance per character';

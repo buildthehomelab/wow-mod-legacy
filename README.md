@@ -7,8 +7,9 @@ Challenges done anywhere on an account earn **Legacy points**, one each. A class
 a profession reaching a skill and a raid's achievement are all challenges. Every character spends
 those points on perks in three trees, **Adventure**, **Resourcefulness** and **Professions**, and
 a **General** row above them, up to a cap that grows with the character's era. They make
-levelling, travelling and professions easier; only Talented and Prodigy add combat power, as
-talent points.
+levelling, travelling and professions easier. Talented and Prodigy add combat power, as talent
+points; Iron Stomach, Conquering Hero and Second Chance add a little outside raids (faster potions,
+longer boss buffs).
 
 Perks are picked on the LEGACY page of the
 [Portalkeeper launcher fork](https://github.com/buildthehomelab/wow-Portalkeeper). The launcher
@@ -50,7 +51,8 @@ is in combat.
 ## The trees
 
 Ranks cost one point each. A perk in the second row needs 5 points in the rest of its tree first,
-and a perk in the third row needs 10. Some perks also need every rank of the perk above them.
+a perk in the third row needs 10, and one in the fourth row 15. Some perks also need every rank of
+another perk first.
 
 ### General
 
@@ -61,10 +63,20 @@ One row above the three trees, with nothing needed in any tree. Deep Pockets is 
 |---|---|---|
 | Deep Pockets | 10 | Each bag in your four bag slots has 1 more slot (36 at most). **Permanent**: a saved rank can't be taken back, and it stays when the rest of the build is switched off. |
 | Hasty Hearth | 5 | Your Hearthstone cools down 5 min sooner: 30 min down to 5 min at rank 5. Astral Recall, the Scrolls of Recall, the Runes of Recall, the Ruby Slippers, the Gauntlets of the Cheerful Hearth and the Ethereal Portal cool down 5 min sooner too, never below 5 min. |
+| Second Home | 1 | A second Hearthstone, the Second Home stone. Use it at an inn or in a city (or pick "Make this inn my Second Home" at an innkeeper) to make that your Second Home; use it anywhere else to go there. It shares the Hearthstone's cooldown, Hasty Hearth included. |
 
 Hasty Hearth expects the realm's own cooldowns for those (30 min for the Hearthstone). After
 every cast of one of them, perk or not, the module sends the client the cooldown the server has,
 since the client otherwise starts the one its Spell.dbc names.
+
+The Second Home stone is item 40582, an unused placeholder that the 3.3.5a client already draws
+with the Hearthstone's icon, so it needs no client patch. It casts the Hearthstone's own spell, so
+it shows the same cast bar and shares its cooldown. The module puts it in the bags of a character
+with the perk (at login, when the perk is saved, and every 30 seconds if the bags were full or the
+stone was thrown away) and takes it away when the perk goes. A stone used in a rest area sets the
+Second Home there and doesn't start the cooldown; the client won't use it while the Hearthstone is
+cooling down, which is what the innkeeper's line is for. A Second Home has to be on solid ground:
+not while falling, flying or swimming, on a boat or zeppelin, or in an instance.
 
 The backpack itself stays at 16: unlike a bag, it has no size the server can change.
 How it works: a bag's size is a value on the bag that the server sends to the client. A stock
@@ -94,6 +106,7 @@ back ("There were problems with equipping item(s).").
 | Talented | 5 | Talent points start one level earlier (level 5 at 5/5), up to the same total at the top level (71 at 80). Needs Well Rested 5/5. |
 | Prodigy | 9 | +1 talent point once talent points have started (80 at 80 with 9/9). Fourth row (15 points in Adventure); needs Talented 5/5. |
 | Soul Tether | 3 | Releasing your spirit in a dungeon or raid brings you back to life at its entrance, with 33/67/100% of your health and mana. Fourth row (15 points in Adventure). |
+| Master Swimmer | 2 | Your breath lasts 50% longer underwater, and you swim 15% faster. Swim speed bonuses don't add up: the best one counts, so it does nothing in Aquatic Form. Fourth row. |
 
 Soul Tether uses the way in nearest to you (`areatrigger_teleport`, outdoor ones first). If a boss
 fight is running when you release, or starts before you land, you get the normal release instead:
@@ -120,9 +133,14 @@ talent reset, like after a level-down. Bots have no perks and keep the core's co
 | Gourmand | 3 | Well Fed lasts 33% longer. |
 | Diplomat | 5 | +2% reputation from monsters and quests. |
 | Reinforce | 5 | Items lose 8% less durability when you die. |
-| Permanence | 2 | Your class buffs of 10 min or more that can go on others last 25% longer. Needs Gourmand 3/3. |
+| Permanence | 2 | Your class buffs of 10 min or more that can go on others last 50% longer. Needs Gourmand 3/3. |
 | The Quick and the Dead | 2 | +5% speed as a ghost; at rank 2, helpful spells cost nothing for 1 min after you come back to life, until combat. Not in battlegrounds or arenas. |
 | Reagent Economy | 1 | Class abilities no longer need reagents that vendors sell. |
+| Iron Stomach | 3 | Potions cool down 6 sec sooner (18 sec at 3/3). Not in dungeons, raids or battlegrounds. |
+| Fast Recovery | 5 | Out of combat, an extra 0.5% of your health and mana every 5 sec (2.5% at 5/5). Not in battlegrounds or arenas. |
+| Conquering Hero | 2 | Rallying Cry of the Dragonslayer, Warchief's Blessing and Spirit of Zandalar last 50% longer. Fourth row. |
+| Second Chance | 1 | Those three buffs survive the first time you die with them: they come back when you do, with the time they had left. The same buff doesn't come back a second time (relogs included); a new one does. Fourth row; needs Conquering Hero 2/2. |
+| Personal Banking | 1 | Any innkeeper can open your bank ("Open my bank" in their menu), once an hour: Jeeves appears beside you for 2 minutes, seen by you alone, and the bank closes when you walk away or he leaves. Fourth row. |
 
 ### Professions
 
@@ -134,20 +152,30 @@ talent reset, like after a level-down. Bots have no perks and keep the core's co
 | Bountiful Harvest | 5 | 4% chance to gather twice as much from Mining, Herbalism and Skinning. Needs Working Overtime 5/5. |
 | Bartering | 2 | Vendor prices and repairs 5% lower. |
 | Salvager | 3 | 5% chance of one more material when disenchanting, prospecting or milling. |
-| Dedicated Study | 1 | Once a day, your lowest profession that isn't at its maximum gains 1 skill. |
+| Dedicated Study | 1 | Once a day, your lowest profession that isn't at its maximum gains 1 skill. Once all of them are, 3 of a random Elemental Essence (Earth, Fire, Water or Air) instead; by mail if your bags are full. |
 | Swift Gatherer | 5 | Mining, Herbalism and Skinning take 5% less time. |
+| Master Forager | 5 | +1 Mining, Herbalism and Skinning skill and +5 Fishing (+5 and +25 at 5/5), like a skill bonus from gear. |
+| Performance Bonus | 3 | 5% chance of double Merchant's Favor when you hand in a Sealed crate at your trade camp (mod-supply-logistics). Fourth row; needs Bountiful Harvest 5/5. |
 
 ### Changes from WoW Forever
 
-Four of WoW Forever's perks rely on things 3.3.5 doesn't have, or that already exist on this
+A few of WoW Forever's perks rely on things 3.3.5 doesn't have, or that already exist on this
 server in another form. Explorer's Stride and Prodigy are this realm's own additions to Adventure,
-and Swift Gatherer to Professions.
+Salvager and Swift Gatherer to Professions.
 
 - **Field Guide** → **Second Wind**: there are no camps.
 - **Bountiful Harvest** doubles a gather instead of adding "Scarce" materials.
-- **Performance Bonus** → **Salvager**: there are no commerce crates.
-- **Dedicated Study** does nothing once every profession is at its maximum: there is no Elemental
-  Essence.
+- **Dedicated Study** gives its Elemental Essences once every profession the character has is at
+  its current maximum, rather than at 300 in all five.
+- **Permanence** has no camp half.
+
+The last perks in each tree (Master Swimmer; Iron Stomach, Fast Recovery, Conquering Hero, Second
+Chance, Personal Banking; Master Forager; Second Home) and Performance Bonus are in WoW Forever's
+game data (build 1.60.1.70790) but not yet on its trees, except Performance Bonus. The data gives one
+value for each, which is the max rank here. Second Home is an item because a 3.3.5a client can't
+learn a new spell without a patch. Second Chance knows a buff that already came back by when it
+runs out, counted in /played time; time spent in a raid (where mod-forever-world-buffs pauses these
+buffs) moves that later, so a raid of more than 5 minutes gives the buff another chance.
 
 Some perks also work a little differently, because of what the core lets a module change:
 
@@ -243,11 +271,16 @@ them:
 
 ## IDs
 
-- spell_dbc 90480-90482 and 90490-90499: hidden, server-only auras that the client never sees.
-  90480 is High Alert, 90481 Explorer's Stride and 90482 The Quick and the Dead; 90490-90499 are
-  Reagent Economy, one per class.
-- Tables: `mod_legacy_challenge` (world); `mod_legacy_challenge_done`, `mod_legacy_rank` and
-  `mod_legacy_character` (characters).
+- spell_dbc 90480-90487 and 90490-90499: hidden, server-only spells that the client never sees.
+  90480 is High Alert, 90481 Explorer's Stride, 90482 The Quick and the Dead, 90483-90484 Master
+  Swimmer, 90485-90486 Master Forager, 90487 Personal Banking's cooldown; 90490-90499 are Reagent
+  Economy, one per class.
+- item_template 40582: the Second Home stone (TrinityCore's unused "[TDB PH] - unsused
+  Scourgestone" row, put back by the uninstall SQL). spell_script_names: `spell_legacy_second_home`
+  on the Hearthstone's spell 8690.
+- Personal Banking summons the stock Jeeves (creature 35642) with only the banker flag.
+- Tables: `mod_legacy_challenge` (world); `mod_legacy_challenge_done`, `mod_legacy_rank`,
+  `mod_legacy_character`, `mod_legacy_home` and `mod_legacy_second_chance` (characters).
 
 ## Troubleshooting
 

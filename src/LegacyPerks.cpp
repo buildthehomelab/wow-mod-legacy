@@ -1,18 +1,24 @@
 /*
  * mod-legacy: what the perks do.
  *
- * Most perks are a hook that looks up the player's rank when it fires. Four are hidden auras
- * (High Alert, Explorer's Stride, The Quick and the Dead's ghost speed, Reagent Economy) that a
- * player's own map update brings in line with their ranks every second, which also covers a
- * build changed from the launcher.
+ * Most perks are a hook that looks up the player's rank when it fires. Six are hidden auras
+ * (High Alert, Explorer's Stride, The Quick and the Dead's ghost speed, Reagent Economy, Master
+ * Swimmer, Master Forager) that a player's own map update brings in line with their ranks every
+ * second, which also covers a build changed from the launcher.
  *
  * Changes from WoW Forever, for systems 3.3.5 or this realm doesn't have:
  * - Talented keeps WoW Forever's rule (an earlier start, the same total); Prodigy, after it, adds
  *   points on top. Explorer's Stride is an extra perk of this realm's.
  * - Second Wind replaces Field Guide (no camps).
  * - Bountiful Harvest doubles a gather instead of adding Scarce materials.
- * - Salvager replaces Performance Bonus (no commerce crates).
- * - Dedicated Study does nothing once every profession is at its maximum (no Elemental Essence).
+ * - Salvager is an extra perk of this realm's, from when Performance Bonus had no crates to work
+ *   on; Performance Bonus came back with mod-supply-logistics.
+ * - Dedicated Study's Elemental Essences come once every profession the character has is at its
+ *   maximum, whatever that maximum is, rather than at 300 in all of them.
+ * - Master Swimmer, Iron Stomach, Fast Recovery, Master Forager, Conquering Hero, Second Chance,
+ *   Personal Banking and Second Home are in WoW Forever's game data but not on its trees yet.
+ *   Their single value is the max rank here, and Second Home is an item (a client can't learn a
+ *   new spell without a patch). Personal Banking summons Jeeves, banking only, for 2 min.
  * - For Great Honor counts honorable kills; battleground bonus honor has no hook.
  * - Reinforce gives back part of the durability lost between a killing blow and the update after
  *   resurrection (the death and the spirit healer), since the core has no hook on durability loss.
@@ -38,6 +44,7 @@
 #include "AreaDefines.h"
 #include "Bag.h"
 #include "Chat.h"
+#include "Containers.h"
 #include "Creature.h"
 #include "DatabaseEnv.h"
 #include "DataMap.h"
@@ -54,10 +61,15 @@
 #include "ObjectMgr.h"
 #include "Player.h"
 #include "ScriptMgr.h"
+#include "Mail.h"
+#include "QuestDef.h"
+#include "ScriptedGossip.h"
 #include "Spell.h"
 #include "SpellAuraEffects.h"
 #include "SpellAuras.h"
 #include "SpellMgr.h"
+#include "SpellScript.h"
+#include "SpellScriptLoader.h"
 #include "World.h"
 #include "WorldPacket.h"
 #include "WorldSession.h"
@@ -73,9 +85,42 @@ namespace
     constexpr uint32 SPELL_HIGH_ALERT = 90480;
     constexpr uint32 SPELL_EXPLORERS_STRIDE = 90481;
     constexpr uint32 SPELL_QUICK_AND_DEAD = 90482;
+    constexpr uint32 SPELL_SWIMMER_BREATH = 90483;
+    constexpr uint32 SPELL_SWIMMER_SPEED = 90484;
+    constexpr uint32 SPELL_FORAGER_GATHERING = 90485;
+    constexpr uint32 SPELL_FORAGER_FISHING = 90486;
+    constexpr uint32 SPELL_PERSONAL_BANKING = 90487;        // only a cooldown, so it's saved over a logout
     constexpr uint32 SPELL_REAGENT_ECONOMY_BASE = 90489;    // + class; Druid (11) is 90499
     constexpr uint32 SPELL_RECENTLY_BANDAGED = 11196;
     constexpr uint32 SPELL_RESURRECTION_SICKNESS = 15007;
+
+    constexpr uint32 ITEM_SECOND_HOME = 40582;              // an unused placeholder the client draws as a Hearthstone
+    constexpr uint32 ITEM_MERCHANTS_FAVOR = 90740;          // mod-supply-logistics' currency
+
+    // Dedicated Study: Elemental Earth, Fire, Water and Air.
+    constexpr std::array<uint32, 4> ESSENCES = { 7076, 7078, 7080, 7082 };
+    constexpr uint32 ESSENCE_COUNT = 3;
+
+    // Conquering Hero and Second Chance: the buffs a boss's head or heart brings to a city.
+    constexpr std::array<uint32, 3> BOSS_BUFFS =
+    {
+        22888,  // Rallying Cry of the Dragonslayer (Onyxia, Nefarian)
+        16609,  // Warchief's Blessing (Rend)
+        24425,  // Spirit of Zandalar (Hakkar)
+    };
+
+    bool IsBossBuff(uint32 spellId)
+    {
+        return std::find(BOSS_BUFFS.begin(), BOSS_BUFFS.end(), spellId) != BOSS_BUFFS.end();
+    }
+
+    constexpr uint32 FAST_RECOVERY_MS = 5000;
+    constexpr uint32 PERSONAL_BANKING_COOLDOWN_MS = HOUR * IN_MILLISECONDS;
+    constexpr uint32 PERSONAL_BANKING_VISIT_MS = 2 * MINUTE * IN_MILLISECONDS;
+    constexpr uint32 NPC_JEEVES = 35642;                    // the engineers' summoned banker
+    // Personal Banking's gossip option: a sender no gossip menu in the database uses.
+    constexpr uint32 GOSSIP_SENDER_LEGACY = 0x4C454741;    // "LEGA"
+    constexpr uint32 LEGACY_ACTION_BANK = 1;
 
     constexpr uint32 THRILL_TICKS = 5;
     constexpr uint32 THRILL_TICK_MS = 2000;
@@ -141,6 +186,40 @@ namespace
         uint32 tetherMap = 0;
         uint32 tetherInstance = 0;
         uint32 tetherWait = 0;
+
+        // Fast Recovery
+        uint32 recoveryTimer = FAST_RECOVERY_MS;
+
+        // Iron Stomach: a potion cast that started (compared, never followed: it may be gone),
+        // then, once it went through, the potion whose cooldown the core sets once the player is
+        // out of combat.
+        Spell const* potionCast = nullptr;
+        uint32 castPotionSpell = 0;
+        uint32 castPotionItem = 0;
+        uint32 potionSpell = 0;
+        uint32 potionItem = 0;
+
+        // Second Chance: the boss buffs the last death took, given back at the update after the
+        // resurrection. `secondChanceSpent` is when each buff given back would run out, in seconds
+        // of the character's /played time (mod_legacy_second_chance): buffs only run down while
+        // the character is online, so the same buff still runs out then, while a new one runs out
+        // later. mod-forever-world-buffs' raid pause moves it later by the time in the raid.
+        struct SavedBuff
+        {
+            uint32 spell;
+            int32 duration;
+            int32 maxDuration;
+        };
+        std::vector<SavedBuff> bossBuffs;
+        bool restoreBossBuffs = false;
+        std::unordered_map<uint32, uint32> secondChanceSpent;
+        bool spentLoaded = false;
+
+        // Second Home: where the stone goes, read when first needed.
+        bool homeLoaded = false;
+        bool homeSet = false;
+        WorldLocation home;
+        bool homeFullWarned = false;
     };
 
     PerkData* DataOf(Player* player)
@@ -279,6 +358,8 @@ namespace
 
     // Guard so items the perks hand out don't trigger the perks again.
     thread_local bool granting = false;
+    // Second Chance giving a boss buff back: its length is set afterwards, not by Conquering Hero.
+    thread_local bool restoringBossBuff = false;
 
     void GrantExtra(Player* player, uint32 entry, uint32 count, char const* perk)
     {
@@ -288,6 +369,29 @@ namespace
         if (player->AddItem(entry, count))
             ChatHandler(player->GetSession()).PSendSysMessage("|cffe6cc80{}:|r you get {} more.", perk, count == 1 ? "one" : std::to_string(count));
         granting = false;
+    }
+
+    // Into the bags, or by mail when they're full. Returns whether it went to the mailbox.
+    bool GiveOrMail(Player* player, uint32 entry, uint32 count, char const* perk)
+    {
+        ItemPosCountVec dest;
+        if (player->CanStoreNewItem(NULL_BAG, NULL_SLOT, dest, entry, count) == EQUIP_ERR_OK)
+            if (Item* item = player->StoreNewItem(dest, entry, true))
+            {
+                player->SendNewItem(item, count, true, false);
+                return false;
+            }
+
+        CharacterDatabaseTransaction trans = CharacterDatabase.BeginTransaction();
+        MailDraft draft(perk, "Your bags were full, so this came by mail.");
+        if (Item* item = Item::CreateItem(entry, count, player))
+        {
+            item->SaveToDB(trans);
+            draft.AddItem(item);
+        }
+        draft.SendMailTo(trans, MailReceiver(player), MailSender(MAIL_NORMAL, 0, MAIL_STATIONERY_DEFAULT));
+        CharacterDatabase.CommitTransaction(trans);
+        return true;
     }
 
     void ForEachItem(Player* player, std::function<void(Item*)> const& fn)
@@ -358,7 +462,6 @@ namespace
         else if (aura)
             player->RemoveAurasDueToSpell(spellId);
     }
-
     bool IsWellFed(SpellInfo const* spell)
     {
         char const* name = spell->SpellName[0];
@@ -463,12 +566,14 @@ namespace
 
         uint32 lowest = 0;
         uint16 lowestValue = 0;
+        bool any = false;
         for (SkillLineEntry const* skill : sSkillLineStore)
         {
             if (!skill || (skill->categoryId != SKILL_CATEGORY_PROFESSION && skill->categoryId != SKILL_CATEGORY_SECONDARY))
                 continue;
             if (skill->id == SKILL_RIDING || !player->HasSkill(skill->id))
                 continue;
+            any = true;
             uint16 value = player->GetPureSkillValue(skill->id);
             if (value >= player->GetPureMaxSkillValue(skill->id))
                 continue;
@@ -478,15 +583,32 @@ namespace
                 lowestValue = value;
             }
         }
-        if (!lowest)
+        // No profession at all: nothing to study.
+        if (!any)
             return;
 
-        player->SetSkill(lowest, player->GetSkillStep(lowest), lowestValue + 1, player->GetPureMaxSkillValue(lowest));
+        // Every profession at its maximum: Elemental Essences, 3 of one kind.
+        uint32 essence = 0;
+        if (!lowest)
+            essence = Acore::Containers::SelectRandomContainerElement(ESSENCES);
+        else
+            player->SetSkill(lowest, player->GetSkillStep(lowest), lowestValue + 1, player->GetPureMaxSkillValue(lowest));
+
         data->studyAt = uint32(GameTime::GetGameTime().count());
         // Direct, so a quick relog can't read the old time back. At most once a day.
         CharacterDatabase.DirectExecute("REPLACE INTO mod_legacy_character (guid, study_at) VALUES ({}, {})", guid, data->studyAt);
+
+        ChatHandler handler(player->GetSession());
+        if (essence)
+        {
+            bool mailed = GiveOrMail(player, essence, ESSENCE_COUNT, "Dedicated Study");
+            ItemTemplate const* proto = sObjectMgr->GetItemTemplate(essence);
+            handler.PSendSysMessage("|cffe6cc80Dedicated Study:|r every profession you have is at its maximum, so you get {} {}{}.",
+                ESSENCE_COUNT, proto ? proto->Name1 : "Elemental Essences", mailed ? " (your bags are full: it's in your mailbox)" : "");
+            return;
+        }
         SkillLineEntry const* skill = sSkillLineStore.LookupEntry(lowest);
-        ChatHandler(player->GetSession()).PSendSysMessage("|cffe6cc80Dedicated Study:|r your {} rises to {}.", skill->name[0], lowestValue + 1);
+        handler.PSendSysMessage("|cffe6cc80Dedicated Study:|r your {} rises to {}.", skill->name[0], lowestValue + 1);
     }
 
     // Hasty Hearth: the spells that take a player home (the Hearthstone, Astral Recall, Scrolls of
@@ -500,11 +622,19 @@ namespace
     }
 
     // The cast spell and the spells sharing its category, which AddSpellAndCategoryCooldowns put
-    // on cooldown with it.
-    std::vector<uint32> HearthCooldownSpells(Player* player, SpellInfo const* spellInfo)
+    // on cooldown with it. An item's own category, when it has one, wins over the spell's.
+    std::vector<uint32> CooldownSpells(Player* player, SpellInfo const* spellInfo, uint32 itemId = 0)
     {
         std::vector<uint32> spells = { spellInfo->Id };
-        if (uint32 category = spellInfo->GetCategory())
+        uint32 category = spellInfo->GetCategory();
+        if (ItemTemplate const* proto = itemId ? sObjectMgr->GetItemTemplate(itemId) : nullptr)
+            for (auto const& itemSpell : proto->Spells)
+                if (uint32(itemSpell.SpellId) == spellInfo->Id && (itemSpell.SpellCooldown >= 0 || itemSpell.SpellCategoryCooldown >= 0))
+                {
+                    category = itemSpell.SpellCategory;
+                    break;
+                }
+        if (category)
         {
             SpellCategoryStore::const_iterator itr = sSpellsByCategoryStore.find(category);
             if (itr != sSpellsByCategoryStore.end())
@@ -516,25 +646,27 @@ namespace
         return spells;
     }
 
-    // Takes `cut` ms off each of the spells' cooldowns, leaving at least 5 min.
-    void ShortenHearth(Player* player, std::vector<uint32> const& spells, uint32 cut)
+    // Takes `cut` ms off each of the spells' cooldowns, leaving at least `floor` ms. The
+    // infinite cooldown a potion has until combat ends is left alone.
+    void ShortenCooldowns(Player* player, std::vector<uint32> const& spells, uint32 cut, uint32 floor)
     {
         uint32 now = GameTime::GetGameTimeMS().count();
         SpellCooldowns& cooldowns = player->GetSpellCooldownMap();
         for (uint32 spellId : spells)
         {
             auto itr = cooldowns.find(spellId);
-            if (itr == cooldowns.end() || itr->second.end <= now + HEARTH_FLOOR_MS)
+            if (itr == cooldowns.end() || itr->second.end <= now + floor || itr->second.end >= now + infinityCooldownDelayCheck)
                 continue;
-            uint32 take = std::min(cut, itr->second.end - now - HEARTH_FLOOR_MS);
+            uint32 take = std::min(cut, itr->second.end - now - floor);
             itr->second.end -= take;
             itr->second.maxduration -= std::min(take, itr->second.maxduration);
         }
     }
 
-    // The client starts the cooldown its own Spell.dbc names (this realm's patch once made the
-    // Hearthstone's 5 min), so the server's real ones replace it: the time left, or none.
-    void SyncHearth(Player* player, std::vector<uint32> const& spells)
+    // The client starts the cooldown its own Spell.dbc or item cache names (this realm's patch
+    // once made the Hearthstone's 5 min), so the server's real ones replace it: the time left, or
+    // none.
+    void SyncCooldowns(Player* player, std::vector<uint32> const& spells)
     {
         uint32 now = GameTime::GetGameTimeMS().count();
         SpellCooldowns const& cooldowns = player->GetSpellCooldownMap();
@@ -552,6 +684,150 @@ namespace
         WorldPacket data;
         player->BuildCooldownPacket(data, SPELL_COOLDOWN_FLAG_NONE, left);
         player->SendDirectMessage(&data);
+    }
+
+    // Iron Stomach, from the player's update: the core sets a potion's cooldown when the cast
+    // finishes or, used in combat, when combat ends (it clears GetLastPotionId then).
+    void UpdatePotion(Player* player, PerkData* data)
+    {
+        // Both spell hooks run inside one Spell::_cast, so a cast noted before this update
+        // either went through already or never will.
+        data->potionCast = nullptr;
+        if (!data->potionSpell || player->IsInCombat() || player->GetLastPotionId())
+            return;
+        uint32 spellId = data->potionSpell;
+        uint32 itemId = data->potionItem;
+        data->potionSpell = 0;
+        data->potionItem = 0;
+
+        uint32 seconds = Percent(player, PERK_IRON_STOMACH);
+        SpellInfo const* info = sSpellMgr->GetSpellInfo(spellId);
+        if (!seconds || !info || InInstance(player))
+            return;
+        // SMSG_MODIFY_COOLDOWN, which also moves the category cooldown the client started from
+        // its item cache on SMSG_COOLDOWN_EVENT.
+        uint32 now = GameTime::GetGameTimeMS().count();
+        SpellCooldowns const& cooldowns = player->GetSpellCooldownMap();
+        for (uint32 cooled : CooldownSpells(player, info, itemId))
+        {
+            auto itr = cooldowns.find(cooled);
+            if (itr == cooldowns.end() || itr->second.end <= now || itr->second.end >= now + infinityCooldownDelayCheck)
+                continue;
+            uint32 take = std::min<uint32>(seconds * IN_MILLISECONDS, itr->second.end - now);
+            player->ModifySpellCooldown(cooled, -int32(take));
+        }
+    }
+
+    // Fast Recovery: a tenth of a percent a rank, every 5 sec out of combat.
+    void FastRecovery(Player* player, PerkData* data, uint32 diff)
+    {
+        if (data->recoveryTimer > diff)
+        {
+            data->recoveryTimer -= diff;
+            return;
+        }
+        data->recoveryTimer = FAST_RECOVERY_MS;
+
+        uint32 tenths = Percent(player, PERK_FAST_RECOVERY);
+        if (!tenths || !player->IsAlive() || player->IsInCombat() || InPvp(player))
+            return;
+        if (player->GetHealth() < player->GetMaxHealth())
+            player->ModifyHealth(int32(uint64(player->GetMaxHealth()) * tenths / 1000));
+        uint32 maxMana = player->GetMaxPower(POWER_MANA);
+        if (maxMana && player->GetPower(POWER_MANA) < maxMana)
+            player->ModifyPower(POWER_MANA, int32(uint64(maxMana) * tenths / 1000));
+    }
+
+    // Second Chance: which boss buffs already came back once. Read the first time it's needed.
+    void LoadSpent(Player* player, PerkData* data)
+    {
+        if (data->spentLoaded)
+            return;
+        data->spentLoaded = true;
+        if (QueryResult result = CharacterDatabase.Query("SELECT spell, expires_played FROM mod_legacy_second_chance WHERE guid = {}", player->GetGUID().GetCounter()))
+            do
+            {
+                Field* fields = result->Fetch();
+                data->secondChanceSpent[fields[0].Get<uint32>()] = fields[1].Get<uint32>();
+            } while (result->NextRow());
+    }
+
+    // Second Chance: the boss buffs the death took, back with the time they had left.
+    void RestoreBossBuffs(Player* player, PerkData* data)
+    {
+        data->restoreBossBuffs = false;
+        std::vector<PerkData::SavedBuff> saved;
+        saved.swap(data->bossBuffs);
+        if (!Rank(player, PERK_SECOND_CHANCE))
+            return;
+
+        std::string names;
+        for (PerkData::SavedBuff const& buff : saved)
+        {
+            if (player->HasAura(buff.spell))
+                continue;
+            restoringBossBuff = true;
+            Aura* aura = player->AddAura(buff.spell, player);
+            restoringBossBuff = false;
+            if (!aura)
+                continue;
+            aura->SetMaxDuration(buff.maxDuration);
+            aura->SetDuration(buff.duration);
+            uint32 expires = player->GetTotalPlayedTime() + uint32(buff.duration / IN_MILLISECONDS);
+            data->secondChanceSpent[buff.spell] = expires;
+            CharacterDatabase.Execute("REPLACE INTO mod_legacy_second_chance (guid, spell, expires_played) VALUES ({}, {}, {})",
+                player->GetGUID().GetCounter(), buff.spell, expires);
+            if (!names.empty())
+                names += ", ";
+            names += aura->GetSpellInfo()->SpellName[0];
+        }
+        if (!names.empty())
+            ChatHandler(player->GetSession()).PSendSysMessage("|cffe6cc80Second Chance:|r {} came back with you. The next death takes {}.",
+                names, saved.size() == 1 ? "it" : "them");
+    }
+
+    // Second Home: where the stone goes. Read from the database the first time it's needed.
+    void LoadHome(Player* player, PerkData* data)
+    {
+        if (data->homeLoaded)
+            return;
+        data->homeLoaded = true;
+        if (QueryResult result = CharacterDatabase.Query("SELECT map, x, y, z, o FROM mod_legacy_home WHERE guid = {}", player->GetGUID().GetCounter()))
+        {
+            Field* fields = result->Fetch();
+            data->home.WorldRelocate(fields[0].Get<uint32>(), fields[1].Get<float>(), fields[2].Get<float>(), fields[3].Get<float>(), fields[4].Get<float>());
+            data->homeSet = true;
+        }
+    }
+
+    bool InRestArea(Player const* player)
+    {
+        return player->HasRestFlag(REST_FLAG_IN_TAVERN) || player->HasRestFlag(REST_FLAG_IN_CITY) || player->HasRestFlag(REST_FLAG_IN_FACTION_AREA);
+    }
+
+    char const* AreaName(Player const* player)
+    {
+        AreaTableEntry const* area = sAreaTableStore.LookupEntry(player->GetAreaId());
+        if (!area)
+            area = sAreaTableStore.LookupEntry(player->GetZoneId());
+        return area ? area->area_name[0] : "this place";
+    }
+
+    // Only a spot the stone can safely bring the player back to: on the ground, on the map itself.
+    void SetHome(Player* player, PerkData* data)
+    {
+        Map const* map = player->FindMap();
+        if (!map || map->Instanceable() || player->GetTransport() || player->IsFalling() || player->IsFlying() || player->IsInWater())
+        {
+            ChatHandler(player->GetSession()).SendSysMessage("|cffe6cc80Second Home:|r stand on solid ground, off boats and out of the water, to make a place your Second Home.");
+            return;
+        }
+        data->homeLoaded = true;
+        data->homeSet = true;
+        data->home.WorldRelocate(player->GetMapId(), player->GetPositionX(), player->GetPositionY(), player->GetPositionZ(), player->GetOrientation());
+        CharacterDatabase.Execute("REPLACE INTO mod_legacy_home (guid, map, x, y, z, o) VALUES ({}, {}, {}, {}, {}, {})", player->GetGUID().GetCounter(),
+            data->home.GetMapId(), data->home.GetPositionX(), data->home.GetPositionY(), data->home.GetPositionZ(), data->home.GetOrientation());
+        ChatHandler(player->GetSession()).PSendSysMessage("|cffe6cc80Second Home:|r {} is now your Second Home.", AreaName(player));
     }
 }
 
@@ -613,6 +889,42 @@ namespace Legacy
         uint8 cls = player->getClass();
         if (cls < MAX_CLASSES && reagentMask[cls])
             Keep(player, ReagentSpell(cls), Rank(player, PERK_REAGENT_ECONOMY) > 0, 0);
+
+        uint8 swimmer = Rank(player, PERK_MASTER_SWIMMER);
+        Keep(player, SPELL_SWIMMER_BREATH, swimmer > 0, int32(swimmer * 50));
+        Keep(player, SPELL_SWIMMER_SPEED, swimmer > 0, int32(swimmer * Perks()[PERK_MASTER_SWIMMER].perRank));
+
+        uint32 forager = Percent(player, PERK_MASTER_FORAGER);
+        Keep(player, SPELL_FORAGER_GATHERING, forager > 0, int32(forager));
+        Keep(player, SPELL_FORAGER_FISHING, forager > 0, int32(forager * 5));
+    }
+
+    void SyncPerkItems(Player* player)
+    {
+        if (!player->IsInWorld() || IsBotSession(player->GetSession()))
+            return;
+        PerkData* data = DataOf(player);
+        bool want = GetConfig().enabled && Rank(player, PERK_SECOND_HOME) > 0;
+        bool has = player->HasItemCount(ITEM_SECOND_HOME, 1, true);
+        if (want && !has)
+        {
+            ItemPosCountVec dest;
+            if (player->CanStoreNewItem(NULL_BAG, NULL_SLOT, dest, ITEM_SECOND_HOME, 1) == EQUIP_ERR_OK)
+            {
+                if (Item* item = player->StoreNewItem(dest, ITEM_SECOND_HOME, true))
+                {
+                    player->SendNewItem(item, 1, true, false);
+                    data->homeFullWarned = false;
+                }
+            }
+            else if (!data->homeFullWarned)
+            {
+                data->homeFullWarned = true;
+                ChatHandler(player->GetSession()).SendSysMessage("|cffe6cc80Second Home:|r make room in your bags for your Second Home stone.");
+            }
+        }
+        else if (!want && has)
+            player->DestroyItemCount(ITEM_SECOND_HOME, player->GetItemCount(ITEM_SECOND_HOME, true), true);
     }
 
     // Ways in from outdoors win over exits from another instance (Blackwing Lair's lands deep in
@@ -718,6 +1030,7 @@ namespace Legacy
         }
 
         RefreshPerks(player);
+        SyncPerkItems(player);
         if (Rank(player, PERK_DEDICATED_STUDY))
             DedicatedStudy(player, data);
     }
@@ -747,6 +1060,7 @@ public:
         PLAYERHOOK_ON_VICTIM_REWARD_AFTER,
         PLAYERHOOK_ON_UPDATE_CRAFTING_SKILL,
         PLAYERHOOK_ON_UPDATE_GATHERING_SKILL,
+        PLAYERHOOK_ON_PLAYER_COMPLETE_QUEST,
         PLAYERHOOK_ON_CREATE_ITEM,
         PLAYERHOOK_ON_LOOT_ITEM,
         PLAYERHOOK_ON_GET_REPUTATION_PRICE_DISCOUNT,
@@ -848,6 +1162,13 @@ public:
         else if (!data->snapshot.empty() && player->IsAlive() && GameTime::GetGameTime() - data->snapshotAt > SNAPSHOT_STALE)
             data->snapshot.clear();
 
+        // Second Chance, once the resurrection is done.
+        if (data->restoreBossBuffs && player->IsAlive())
+            RestoreBossBuffs(player, data);
+
+        UpdatePotion(player, data);
+        FastRecovery(player, data, diff);
+
         if (data->challengeTimer > diff)
             data->challengeTimer -= diff;
         else
@@ -868,9 +1189,11 @@ public:
         {
             data->checkChallenges = false;
             CheckChallenges(player, data->hardcore);
-            // The same 30-second beat catches the daily reset for Dedicated Study.
+            // The same 30-second beat catches the daily reset for Dedicated Study, and gives a
+            // Second Home stone back to bags that were full or to a player who threw it away.
             if (Rank(player, PERK_DEDICATED_STUDY) && player->IsInWorld())
                 DedicatedStudy(player, data);
+            SyncPerkItems(player);
         }
     }
 
@@ -1008,6 +1331,24 @@ public:
         // Reinforce: the spirit healer takes its share after this hook, so the update after does it.
         if (!data->snapshot.empty())
             data->restore = true;
+
+        // Second Chance: the player isn't alive yet in this hook, so the update after does it.
+        if (!data->bossBuffs.empty())
+            data->restoreBossBuffs = true;
+    }
+
+    // Performance Bonus: a Sealed crate handed in at a trade camp (mod-supply-logistics).
+    void OnPlayerCompleteQuest(Player* player, Quest const* quest) override
+    {
+        if (!GetConfig().enabled || !quest)
+            return;
+        uint32 pct = Percent(player, PERK_PERFORMANCE_BONUS);
+        ItemTemplate const* handedIn = pct ? sObjectMgr->GetItemTemplate(quest->RequiredItemId[0]) : nullptr;
+        if (!handedIn || handedIn->Name1.find("Crate") == std::string::npos)
+            return;
+        for (uint8 i = 0; i < QUEST_REWARDS_COUNT; ++i)
+            if (quest->RewardItemId[i] == ITEM_MERCHANTS_FAVOR && quest->RewardItemIdCount[i] && roll_chance_i(int32(pct)))
+                GrantExtra(player, ITEM_MERCHANTS_FAVOR, quest->RewardItemIdCount[i], "Performance Bonus");
     }
 
     // Thrill of Adventure, for the player's own kills and their pet's or totem's.
@@ -1033,11 +1374,23 @@ public:
     }
 
     // The Quick and the Dead: the spell's cost goes back at the next update, after TakePower.
+    // Iron Stomach: a potion, while the cast still has its item (the cast uses it up before the
+    // spell hook that confirms it went through).
     void OnPlayerSpellCast(Player* player, Spell* spell, bool /*skipCheck*/) override
     {
-        if (!spell || spell->GetPowerCost() <= 0)
+        if (!spell)
             return;
         PerkData* data = DataOf(player);
+        if (spell->m_CastItem && (spell->m_CastItem->IsPotion() || spell->GetSpellInfo()->IsCooldownStartedOnEvent())
+            && Rank(player, PERK_IRON_STOMACH) && !IsBotSession(player->GetSession()))
+        {
+            data->potionCast = spell;
+            data->castPotionSpell = spell->GetSpellInfo()->Id;
+            data->castPotionItem = spell->m_CastItem->GetEntry();
+        }
+
+        if (spell->GetPowerCost() <= 0)
+            return;
         if (data->freeUntil <= GameTime::GetGameTime() || player->IsInCombat())
             return;
         SpellInfo const* info = spell->GetSpellInfo();
@@ -1153,6 +1506,8 @@ public:
         // The challenges it did stay with the account.
         trans->Append("DELETE FROM mod_legacy_rank WHERE guid = {}", guid);
         trans->Append("DELETE FROM mod_legacy_character WHERE guid = {}", guid);
+        trans->Append("DELETE FROM mod_legacy_home WHERE guid = {}", guid);
+        trans->Append("DELETE FROM mod_legacy_second_chance WHERE guid = {}", guid);
         ForgetCharacter(guid);
     }
 
@@ -1212,7 +1567,27 @@ public:
 class LegacyPerksUnitScript : public UnitScript
 {
 public:
-    LegacyPerksUnitScript() : UnitScript("LegacyPerksUnitScript", true, { UNITHOOK_ON_DAMAGE }) { }
+    LegacyPerksUnitScript() : UnitScript("LegacyPerksUnitScript", true, { UNITHOOK_ON_DAMAGE, UNITHOOK_ON_AURA_REMOVE }) { }
+
+    // Second Chance: a boss buff the death takes, unless it already came back once.
+    void OnAuraRemove(Unit* unit, AuraApplication* aurApp, AuraRemoveMode mode) override
+    {
+        if (mode != AURA_REMOVE_BY_DEATH || !unit || !unit->IsPlayer() || !aurApp || !IsBossBuff(aurApp->GetBase()->GetId()))
+            return;
+        Player* player = unit->ToPlayer();
+        Aura const* aura = aurApp->GetBase();
+        if (!GetConfig().enabled || !Rank(player, PERK_SECOND_CHANCE) || aura->GetDuration() <= 0)
+            return;
+        PerkData* data = DataOf(player);
+        LoadSpent(player, data);
+        // The buff that came back last time runs out when it did then. 5 min of slack covers
+        // rounding and a short raid visit; a new buff runs out far later.
+        auto spent = data->secondChanceSpent.find(aura->GetId());
+        uint32 expires = player->GetTotalPlayedTime() + uint32(aura->GetDuration() / IN_MILLISECONDS);
+        if (spent != data->secondChanceSpent.end() && expires <= spent->second + 5 * MINUTE)
+            return;
+        data->bossBuffs.push_back({ aura->GetId(), aura->GetDuration(), aura->GetMaxDuration() });
+    }
 
     // Reinforce: what everything was worth at the killing blow.
     void OnDamage(Unit* /*attacker*/, Unit* victim, uint32& damage) override
@@ -1260,23 +1635,36 @@ public:
     }
 
     // Runs after Spell::SendSpellCooldown, so the cooldowns are on the player already.
-    void OnSpellCast(Spell* /*spell*/, Unit* caster, SpellInfo const* spellInfo, bool /*skipCheck*/) override
+    void OnSpellCast(Spell* spell, Unit* caster, SpellInfo const* spellInfo, bool /*skipCheck*/) override
     {
         Player* player = caster ? caster->ToPlayer() : nullptr;
-        if (!player || !spellInfo || !IsHearth(spellInfo->Id) || !player->GetSession() || IsBotSession(player->GetSession()))
+        if (!player || !spellInfo || !player->GetSession() || IsBotSession(player->GetSession()))
             return;
 
-        std::vector<uint32> spells = HearthCooldownSpells(player, spellInfo);
+        // Iron Stomach: the potion OnPlayerSpellCast noted went through. The potion is used up by
+        // now, and out of combat its cooldown is already set.
+        PerkData* data = DataOf(player);
+        if (data->potionCast && data->potionCast == spell)
+        {
+            data->potionCast = nullptr;
+            data->potionSpell = data->castPotionSpell;
+            data->potionItem = data->castPotionItem;
+        }
+
+        if (!IsHearth(spellInfo->Id))
+            return;
+
+        std::vector<uint32> spells = CooldownSpells(player, spellInfo);
         if (uint8 rank = Rank(player, PERK_HASTY_HEARTH))
-            ShortenHearth(player, spells, rank * Perks()[PERK_HASTY_HEARTH].perRank * MINUTE * IN_MILLISECONDS);
-        SyncHearth(player, spells);
+            ShortenCooldowns(player, spells, rank * Perks()[PERK_HASTY_HEARTH].perRank * MINUTE * IN_MILLISECONDS, HEARTH_FLOOR_MS);
+        SyncCooldowns(player, spells);
 
         // Again once the client has handled SPELL_GO, which starts its own Spell.dbc timer.
         ObjectGuid guid = player->GetGUID();
         player->m_Events.AddEventAtOffset([guid, spells]()
         {
             if (Player* p = ObjectAccessor::FindConnectedPlayer(guid))
-                SyncHearth(p, spells);
+                SyncCooldowns(p, spells);
         }, 150ms);
     }
 
@@ -1295,6 +1683,11 @@ public:
             if (IsWellFed(spell))
                 if (uint8 rank = Rank(owner, PERK_GOURMAND))
                     maxDuration = int32(std::min<int64>(int64(maxDuration) * (100 + Thirds(rank)) / 100, INT32_MAX));
+
+            // Conquering Hero. Second Chance sets its own duration when it gives one back.
+            if (IsBossBuff(spell->Id) && !restoringBossBuff)
+                if (uint32 pct = Percent(owner, PERK_CONQUERING_HERO))
+                    maxDuration = int32(std::min<int64>(int64(maxDuration) * (100 + pct) / 100, INT32_MAX));
         }
 
         Unit* caster = aura->GetCaster();
@@ -1305,9 +1698,161 @@ public:
     }
 };
 
+// Personal Banking and Second Home at innkeepers. The core has no hook after an NPC's menu is
+// built, so for a player with either perk this builds the menu the way the core would (the
+// NPC's own script first, then its database menu), adds the perks' lines and sends it.
+class LegacyPerksInnkeeperScript : public AllCreatureScript
+{
+public:
+    LegacyPerksInnkeeperScript() : AllCreatureScript("LegacyPerksInnkeeperScript") { }
+
+    bool CanCreatureGossipHello(Player* player, Creature* creature) override
+    {
+        if (building || !GetConfig().enabled || !creature->HasNpcFlag(UNIT_NPC_FLAG_INNKEEPER) || IsBotSession(player->GetSession()))
+            return false;
+        bool banking = Rank(player, PERK_PERSONAL_BANKING) > 0;
+        bool home = Rank(player, PERK_SECOND_HOME) > 0;
+        if (!banking && !home)
+            return false;
+
+        building = true;
+        bool scripted = sScriptMgr->OnGossipHello(player, creature);
+        building = false;
+        if (!scripted)
+            player->PrepareGossipMenu(creature, creature->GetGossipMenuId(), true);
+
+        if (banking)
+        {
+            uint32 left = BankCooldownLeft(player);
+            std::string text = left ? Acore::StringFormat("Open my bank (Personal Banking: ready in {} min)", (left + MINUTE * IN_MILLISECONDS - 1) / (MINUTE * IN_MILLISECONDS))
+                : std::string("Open my bank (Personal Banking)");
+            AddGossipItemFor(player, GOSSIP_ICON_MONEY_BAG, text, GOSSIP_SENDER_LEGACY, LEGACY_ACTION_BANK);
+        }
+        if (home)
+            AddGossipItemFor(player, GOSSIP_ICON_INTERACT_1, "Make this inn my Second Home", GOSSIP_SENDER_LEGACY, LEGACY_ACTION_SECOND_HOME);
+        // A script sent its menu with the NPC's own greeting; clearing a menu keeps the menu id of
+        // the last database menu, which SendPreparedGossip would take the greeting from.
+        if (scripted)
+            player->PlayerTalkClass->SendGossipMenu(player->GetGossipTextId(creature), creature->GetGUID());
+        else
+            player->SendPreparedGossip(creature);
+        return true;
+    }
+
+    bool CanCreatureGossipSelect(Player* player, Creature* creature, uint32 sender, uint32 action) override
+    {
+        if (sender != GOSSIP_SENDER_LEGACY)
+            return false;
+        CloseGossipMenuFor(player);
+        if (!GetConfig().enabled || !creature->HasNpcFlag(UNIT_NPC_FLAG_INNKEEPER))
+            return true;
+
+        if (action == LEGACY_ACTION_BANK && Rank(player, PERK_PERSONAL_BANKING))
+        {
+            if (uint32 left = BankCooldownLeft(player))
+            {
+                ChatHandler(player->GetSession()).PSendSysMessage("|cffe6cc80Personal Banking:|r ready again in {} min.", (left + MINUTE * IN_MILLISECONDS - 1) / (MINUTE * IN_MILLISECONDS));
+                return true;
+            }
+            // A real banker: the core checks the distance to it for every bank move, the client
+            // closes the bank when the player walks away, and both end when it leaves. (The
+            // .bank command's own-guid bank would stay open anywhere until a real banker is used.)
+            // Jeeves, banking only, seen by this player alone.
+            Position pos = player->GetNearPosition(2.0f, float(M_PI) / 4);
+            TempSummon* banker = player->SummonCreature(NPC_JEEVES, pos, TEMPSUMMON_TIMED_DESPAWN, PERSONAL_BANKING_VISIT_MS, 0, nullptr, true);
+            if (!banker)
+                return true;
+            banker->ReplaceAllNpcFlags(UNIT_NPC_FLAG_BANKER);
+            banker->SetFacingToObject(player);
+            player->AddSpellCooldown(SPELL_PERSONAL_BANKING, 0, PERSONAL_BANKING_COOLDOWN_MS);
+            player->GetSession()->SendShowBank(banker->GetGUID());
+        }
+        else if (action == LEGACY_ACTION_SECOND_HOME && Rank(player, PERK_SECOND_HOME))
+            SetHome(player, DataOf(player));
+        return true;
+    }
+
+private:
+    static constexpr uint32 LEGACY_ACTION_SECOND_HOME = 2;
+    static thread_local bool building;
+
+    static uint32 BankCooldownLeft(Player* player)
+    {
+        SpellCooldowns const& cooldowns = player->GetSpellCooldownMap();
+        auto itr = cooldowns.find(SPELL_PERSONAL_BANKING);
+        uint32 now = GameTime::GetGameTimeMS().count();
+        return itr != cooldowns.end() && itr->second.end > now ? itr->second.end - now : 0;
+    }
+};
+
+thread_local bool LegacyPerksInnkeeperScript::building = false;
+
+// Second Home: the stone casts the Hearthstone's spell (so the client shows its cast bar and
+// cooldown, and the two share it). Used in a rest area it sets the Second Home instead.
+class spell_legacy_second_home : public SpellScript
+{
+    PrepareSpellScript(spell_legacy_second_home);
+
+    bool FromStone()
+    {
+        Item* item = GetCastItem();
+        return item && item->GetEntry() == ITEM_SECOND_HOME;
+    }
+
+    SpellCastResult CheckCast()
+    {
+        if (!FromStone())
+            return SPELL_CAST_OK;
+        Player* player = GetCaster()->ToPlayer();
+        if (!player)
+            return SPELL_FAILED_DONT_REPORT;
+        ChatHandler chat(player->GetSession());
+        if (!GetConfig().enabled || !Rank(player, PERK_SECOND_HOME))
+        {
+            chat.SendSysMessage("|cffe6cc80Second Home:|r this stone needs the Second Home Legacy perk.");
+            return SPELL_FAILED_DONT_REPORT;
+        }
+        PerkData* data = DataOf(player);
+        if (InRestArea(player))
+        {
+            SetHome(player, data);
+            return SPELL_FAILED_DONT_REPORT;
+        }
+        LoadHome(player, data);
+        if (!data->homeSet)
+        {
+            chat.SendSysMessage("|cffe6cc80Second Home:|r use the stone at an inn or in a city first, or ask an innkeeper, to choose your Second Home.");
+            return SPELL_FAILED_DONT_REPORT;
+        }
+        return SPELL_CAST_OK;
+    }
+
+    void HandleTeleport(SpellEffIndex effIndex)
+    {
+        if (!FromStone())
+            return;
+        PreventHitDefaultEffect(effIndex);
+        Player* player = GetHitPlayer();
+        if (!player)
+            return;
+        PerkData* data = DataOf(player);
+        LoadHome(player, data);
+        if (data->homeSet)
+            player->TeleportTo(data->home.GetMapId(), data->home.GetPositionX(), data->home.GetPositionY(), data->home.GetPositionZ(), data->home.GetOrientation(), TELE_TO_SPELL);
+    }
+
+    void Register() override
+    {
+        OnCheckCast += SpellCheckCastFn(spell_legacy_second_home::CheckCast);
+        OnEffectHitTarget += SpellEffectFn(spell_legacy_second_home::HandleTeleport, EFFECT_0, SPELL_EFFECT_TELEPORT_UNITS);
+    }
+};
+
 void AddLegacyPerkScripts()
 {
     new LegacyPerksPlayerScript();
     new LegacyPerksUnitScript();
     new LegacyPerksSpellScript();
+    new LegacyPerksInnkeeperScript();
+    RegisterSpellScript(spell_legacy_second_home);
 }

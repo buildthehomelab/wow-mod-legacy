@@ -4,10 +4,11 @@
  * Challenges done anywhere on an account (a class reaching a level, a profession reaching a
  * skill, a raid's achievement, ...) earn it Legacy points, one each. Every character spends them
  * on perks in three trees: Adventure, Resourcefulness and Professions, and a General row above
- * them (Deep Pockets, Hasty Hearth). A character's cap is the number of challenges up to its own
+ * them (Deep Pockets, Hasty Hearth, Second Home). A character's cap is the number of challenges up to its own
  * era (mod-individual-progression's state): 67 in Classic, 96 in The Burning Crusade, all of them
- * in Wrath of the Lich King. Only Talented and Prodigy add combat power, as talent points
- * (mod-talent-per-level must be off: it would count them twice). Perks are picked in the
+ * in Wrath of the Lich King. Talented and Prodigy add combat power, as talent points
+ * (mod-talent-per-level must be off: it would count them twice); Iron Stomach, Conquering Hero and
+ * Second Chance add a little outside raids. Perks are picked in the
  * launcher, which reaches the module through the portal over SOAP (`.legacy list` / `.legacy set`).
  *
  * Hardcore characters (mod-challenges) spend only the points hardcore characters earned, and only
@@ -64,6 +65,7 @@ namespace Legacy
         PERK_TALENTED,
         PERK_PRODIGY,
         PERK_SOUL_TETHER,
+        PERK_MASTER_SWIMMER,
         // Resourcefulness
         PERK_FOR_GREAT_HONOR,
         PERK_GOURMAND,
@@ -72,6 +74,11 @@ namespace Legacy
         PERK_PERMANENCE,
         PERK_QUICK_AND_DEAD,
         PERK_REAGENT_ECONOMY,
+        PERK_IRON_STOMACH,
+        PERK_FAST_RECOVERY,
+        PERK_CONQUERING_HERO,
+        PERK_SECOND_CHANCE,
+        PERK_PERSONAL_BANKING,
         // Professions
         PERK_WORKING_OVERTIME,
         PERK_MASTER_CHEF,
@@ -81,9 +88,12 @@ namespace Legacy
         PERK_SALVAGER,
         PERK_DEDICATED_STUDY,
         PERK_SWIFT_GATHERER,
+        PERK_MASTER_FORAGER,
+        PERK_PERFORMANCE_BONUS,
         // General
         PERK_DEEP_POCKETS,
         PERK_HASTY_HEARTH,
+        PERK_SECOND_HOME,
         MAX_PERKS
     };
 
@@ -239,6 +249,8 @@ namespace Legacy
     void LoadReagentMasks();
     void LoadEntrances();
     void OnLogin(Player* player);
+    // Second Home: gives the stone to a character with the perk and takes it from one without.
+    void SyncPerkItems(Player* player);
 }
 
 #endif
