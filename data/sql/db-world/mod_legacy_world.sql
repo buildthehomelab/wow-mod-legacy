@@ -279,3 +279,67 @@ VALUES
      0, 0, 0, 0, 0,
      1, 'Reagent Economy (Druid)', 16712190, 1,
      0, 0, 1, 0, 1, 0);
+
+-- More hidden auras, for the perks from WoW Forever's game data:
+--   90483 Master Swimmer: Mod Water Breathing (155), percent longer breath.
+--   90484 Master Swimmer: Mod Increase Swim Speed (58), percent faster swimming (the best one
+--          counts, so it doesn't add to Aquatic Form or a Swim Speed Potion).
+--   90485 Master Forager: Mod Skill (30) in Mining (186), Herbalism (182) and Skinning (393).
+--   90486 Master Forager: Mod Skill (30) in Fishing (356).
+--   90487 Personal Banking: never cast or applied. Its cooldown is the hour between bank visits,
+--          kept in character_spell_cooldown over a logout.
+DELETE FROM `spell_dbc` WHERE `ID` BETWEEN 90483 AND 90487;
+INSERT INTO `spell_dbc`
+    (`ID`, `Attributes`, `AttributesEx`, `CastingTimeIndex`, `DurationIndex`, `RangeIndex`, `EquippedItemClass`,
+     `Effect_1`, `EffectDieSides_1`, `EffectBasePoints_1`, `ImplicitTargetA_1`, `EffectAura_1`, `EffectMiscValue_1`,
+     `Effect_2`, `EffectDieSides_2`, `EffectBasePoints_2`, `ImplicitTargetA_2`, `EffectAura_2`, `EffectMiscValue_2`,
+     `Effect_3`, `EffectDieSides_3`, `EffectBasePoints_3`, `ImplicitTargetA_3`, `EffectAura_3`, `EffectMiscValue_3`,
+     `SpellIconID`, `Name_Lang_enUS`, `Name_Lang_Mask`, `SchoolMask`,
+     `EffectChainAmplitude_1`, `EffectChainAmplitude_2`, `EffectChainAmplitude_3`,
+     `EffectBonusMultiplier_1`, `EffectBonusMultiplier_2`, `EffectBonusMultiplier_3`)
+VALUES
+    (90483, 192, 268435456, 1, 21, 1, -1,
+     6, 1, 0, 1, 155, 0,
+     0, 0, 0, 0, 0, 0,
+     0, 0, 0, 0, 0, 0,
+     1, 'Master Swimmer (breath)', 16712190, 1,
+     1, 0, 0, 1, 0, 0),
+    (90484, 192, 268435456, 1, 21, 1, -1,
+     6, 1, 0, 1, 58, 0,
+     0, 0, 0, 0, 0, 0,
+     0, 0, 0, 0, 0, 0,
+     1, 'Master Swimmer (swim speed)', 16712190, 1,
+     1, 0, 0, 1, 0, 0),
+    (90485, 192, 268435456, 1, 21, 1, -1,
+     6, 1, 0, 1, 30, 186,
+     6, 1, 0, 1, 30, 182,
+     6, 1, 0, 1, 30, 393,
+     1, 'Master Forager (gathering)', 16712190, 1,
+     1, 1, 1, 1, 1, 1),
+    (90486, 192, 268435456, 1, 21, 1, -1,
+     6, 1, 0, 1, 30, 356,
+     0, 0, 0, 0, 0, 0,
+     0, 0, 0, 0, 0, 0,
+     1, 'Master Forager (fishing)', 16712190, 1,
+     1, 0, 0, 1, 0, 0),
+    (90487, 128, 268435456, 1, 0, 1, -1,
+     0, 0, 0, 0, 0, 0,
+     0, 0, 0, 0, 0, 0,
+     0, 0, 0, 0, 0, 0,
+     1, 'Personal Banking', 16712190, 1,
+     0, 0, 0, 0, 0, 0);
+
+-- Second Home: a second Hearthstone. Item 40582 is TrinityCore's unused "[TDB PH] - unsused
+-- Scourgestone" placeholder, which the 3.3.5a client's Item.dbc already draws with the
+-- Hearthstone's icon, so no client patch is needed. It casts the Hearthstone's spell (8690),
+-- so it has the same cast bar and shares its cooldown; spell_legacy_second_home sends it to the
+-- Second Home instead, or sets the Second Home when it's used in a rest area. The module gives it
+-- to characters with the perk and takes it from those without.
+DELETE FROM `item_template` WHERE `entry` = 40582;
+INSERT INTO `item_template` (`entry`, `class`, `subclass`, `name`, `displayid`, `Quality`, `Flags`, `BuyCount`, `ItemLevel`,
+    `maxcount`, `stackable`, `spellid_1`, `spelltrigger_1`, `bonding`, `description`, `Material`, `VerifiedBuild`) VALUES
+(40582, 15, 0, 'Second Home', 6418, 1, 64, 1, 1, 1, 1, 8690, 0, 1,
+    'Use it at an inn or in a city to make that your Second Home. Use it anywhere else to go there.', 4, 0);
+
+DELETE FROM `spell_script_names` WHERE `ScriptName` = 'spell_legacy_second_home';
+INSERT INTO `spell_script_names` (`spell_id`, `ScriptName`) VALUES (8690, 'spell_legacy_second_home');

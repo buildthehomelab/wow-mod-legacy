@@ -273,6 +273,7 @@ public:
         {
             RefreshPerks(player);
             UpdateBags(player);
+            SyncPerkItems(player);
             // Talented and Prodigy: a character with fewer points than it spent gets a free reset.
             player->InitTalentForLevel();
             ChatHandler(player->GetSession()).PSendSysMessage("|cffe6cc80Legacy:|r your perks were changed in the launcher ({} of {} points spent).",

@@ -27,3 +27,14 @@ CREATE TABLE IF NOT EXISTS `mod_legacy_character` (
     `study_at` INT UNSIGNED NOT NULL DEFAULT 0 COMMENT 'unix time',
     PRIMARY KEY (`guid`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='mod-legacy: per-character state';
+
+-- Second Home: where a character's Second Home stone takes it.
+CREATE TABLE IF NOT EXISTS `mod_legacy_home` (
+    `guid` INT UNSIGNED NOT NULL COMMENT 'characters.guid',
+    `map` SMALLINT UNSIGNED NOT NULL,
+    `x` FLOAT NOT NULL,
+    `y` FLOAT NOT NULL,
+    `z` FLOAT NOT NULL,
+    `o` FLOAT NOT NULL,
+    PRIMARY KEY (`guid`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='mod-legacy: Second Home per character';

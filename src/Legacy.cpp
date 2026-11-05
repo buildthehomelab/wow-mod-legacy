@@ -51,8 +51,9 @@ namespace
         { TREE_GENERAL,         "general",         "General",         "inv_misc_bag_19" },
     }};
 
-    // Rows unlock at 0, 5, 10 and 15 points in the rest of the tree, like WoW Forever's trees. Four
-    // of Forever's perks don't fit 3.3.5 or this realm and are replaced (see the README).
+    // Rows unlock at 0, 5, 10 and 15 points in the rest of the tree, like WoW Forever's trees. A few
+    // of Forever's perks don't fit 3.3.5 or this realm and are replaced, and the last perks in each
+    // tree come from Forever's game data, where they wait for a later patch (see the README).
     std::array<PerkInfo, MAX_PERKS> const PERKS =
     {{
         { PERK_HIGH_ALERT, "high_alert", TREE_ADVENTURE, "High Alert", "spell_shadow_detectinvisibility", 2, 0, 0, 0, NO_PERK, 5,
@@ -77,6 +78,8 @@ namespace
             "You have more talent points once you start earning them." },
         { PERK_SOUL_TETHER, "soul_tether", TREE_ADVENTURE, "Soul Tether", "spell_nature_reincarnation", 3, 3, 1, 15, NO_PERK, 0,
             "Releasing your spirit in a dungeon or raid brings you back to life at its entrance, unless a boss fight is running." },
+        { PERK_MASTER_SWIMMER, "master_swimmer", TREE_ADVENTURE, "Master Swimmer", "spell_shadow_demonbreath", 2, 3, 0, 15, NO_PERK, 15,
+            "Your breath lasts longer underwater, and you swim faster." },
 
         { PERK_FOR_GREAT_HONOR, "for_great_honor", TREE_RESOURCEFULNESS, "For Great Honor", "inv_jewelry_trinketpvp_01", 5, 0, 0, 0, NO_PERK, 2,
             "You gain more honor from honorable kills." },
@@ -86,12 +89,22 @@ namespace
             "You gain more reputation from killing monsters and completing quests." },
         { PERK_REINFORCE, "reinforce", TREE_RESOURCEFULNESS, "Reinforce", "trade_blacksmithing", 5, 1, 0, 5, NO_PERK, 8,
             "Your items lose less durability when you die." },
-        { PERK_PERMANENCE, "permanence", TREE_RESOURCEFULNESS, "Permanence", "spell_holy_magicalsentry", 2, 1, 1, 5, PERK_GOURMAND, 25,
+        { PERK_PERMANENCE, "permanence", TREE_RESOURCEFULNESS, "Permanence", "spell_holy_magicalsentry", 2, 1, 1, 5, PERK_GOURMAND, 50,
             "Your long class buffs (10 min or more) that you can cast on others last longer." },
         { PERK_QUICK_AND_DEAD, "the_quick_and_the_dead", TREE_RESOURCEFULNESS, "The Quick and the Dead", "spell_shadow_ghostkey", 2, 1, 2, 5, NO_PERK, 5,
             "You move faster as a ghost. At rank 2, your helpful spells also cost nothing for 1 min after you come back to life, until you enter combat. Not in battlegrounds or arenas." },
         { PERK_REAGENT_ECONOMY, "reagent_economy", TREE_RESOURCEFULNESS, "Reagent Economy", "inv_misc_bag_10", 1, 2, 1, 10, NO_PERK, 0,
             "Your class abilities no longer need reagents that vendors sell." },
+        { PERK_IRON_STOMACH, "iron_stomach", TREE_RESOURCEFULNESS, "Iron Stomach", "inv_potion_54", 3, 2, 0, 10, NO_PERK, 6,
+            "Your potions cool down sooner. Not in dungeons, raids or battlegrounds." },
+        { PERK_FAST_RECOVERY, "fast_recovery", TREE_RESOURCEFULNESS, "Fast Recovery", "spell_nature_rejuvenation", 5, 2, 2, 10, NO_PERK, 5,
+            "Out of combat, you get back extra health and mana every 5 sec. Not in battlegrounds or arenas." },
+        { PERK_CONQUERING_HERO, "conquering_hero", TREE_RESOURCEFULNESS, "Conquering Hero", "inv_misc_head_dragon_01", 2, 3, 0, 15, NO_PERK, 50,
+            "The buffs from celebrating a boss's defeat last longer: Rallying Cry of the Dragonslayer, Warchief's Blessing and Spirit of Zandalar." },
+        { PERK_SECOND_CHANCE, "second_chance", TREE_RESOURCEFULNESS, "Second Chance", "spell_holy_divineintervention", 1, 3, 1, 15, PERK_CONQUERING_HERO, 0,
+            "The buffs from celebrating a boss's defeat survive the first time you die with them." },
+        { PERK_PERSONAL_BANKING, "personal_banking", TREE_RESOURCEFULNESS, "Personal Banking", "inv_misc_ornatebox", 1, 3, 2, 15, NO_PERK, 60,
+            "Any innkeeper can open your bank, once an hour." },
 
         { PERK_WORKING_OVERTIME, "working_overtime", TREE_PROFESSIONS, "Working Overtime", "inv_misc_pocketwatch_01", 5, 0, 0, 0, NO_PERK, 4,
             "An extra chance of a skill-up when you craft or gather, while the recipe or node isn't gray." },
@@ -109,11 +122,17 @@ namespace
             "Once a day, your lowest profession (primary or secondary) that isn't at its maximum gains 1 skill." },
         { PERK_SWIFT_GATHERER, "swift_gatherer", TREE_PROFESSIONS, "Swift Gatherer", "trade_mining", 5, 2, 0, 10, NO_PERK, 5,
             "Mining, Herbalism and Skinning take less time." },
+        { PERK_MASTER_FORAGER, "master_forager", TREE_PROFESSIONS, "Master Forager", "inv_misc_herb_07", 5, 2, 2, 10, NO_PERK, 1,
+            "Your Mining, Herbalism, Skinning and Fishing skills are higher." },
+        { PERK_PERFORMANCE_BONUS, "performance_bonus", TREE_PROFESSIONS, "Performance Bonus", "racial_dwarf_findtreasure", 3, 3, 0, 15, PERK_BOUNTIFUL_HARVEST, 5,
+            "A chance of double Merchant's Favor when you hand in a Sealed crate at your trade camp." },
 
         { PERK_DEEP_POCKETS, "deep_pockets", TREE_GENERAL, "Deep Pockets", "inv_misc_bag_felclothbag", 10, 0, 0, 0, NO_PERK, 1,
             "The bags in your four bag slots hold more. Permanent: a saved rank can't be taken back." },
         { PERK_HASTY_HEARTH, "hasty_hearth", TREE_GENERAL, "Hasty Hearth", "inv_misc_rune_01", 5, 0, 1, 0, NO_PERK, 5,
             "Your Hearthstone and the other ways home cool down sooner." },
+        { PERK_SECOND_HOME, "second_home", TREE_GENERAL, "Second Home", "spell_arcane_teleportstormwind", 1, 0, 2, 0, NO_PERK, 0,
+            "A second Hearthstone that takes you to an inn or city of your choice." },
     }};
 
     // The highest mod-individual-progression state looked for (it has 18; a little room for more).
@@ -502,6 +521,18 @@ namespace Legacy
                 return Acore::StringFormat("You have {} more talent point{} once you start earning them. Taking ranks back resets your talents if you have spent more points than you have left.", value, value == 1 ? "" : "s");
             case PERK_SOUL_TETHER:
                 return Acore::StringFormat("Releasing your spirit in a dungeon or raid brings you back to life at its entrance, with {}% of your health and mana. During a boss fight, you get 15 sec for it to end, then go to the graveyard as usual.", Thirds(rank));
+            case PERK_MASTER_SWIMMER:
+                return Acore::StringFormat("Your breath lasts {}% longer underwater, and you swim {}% faster. Doesn't add to other swim speed effects: the best one counts.", rank * 50, value);
+            case PERK_IRON_STOMACH:
+                return Acore::StringFormat("Your potions cool down {} sec sooner. Not in dungeons, raids or battlegrounds.", value);
+            case PERK_FAST_RECOVERY:
+                return Acore::StringFormat("Out of combat, you get back an extra {}.{}% of your health and mana every 5 sec. Not in battlegrounds or arenas.", value / 10, value % 10);
+            case PERK_CONQUERING_HERO:
+                return Acore::StringFormat("Rallying Cry of the Dragonslayer, Warchief's Blessing and Spirit of Zandalar last {}% longer.", value);
+            case PERK_SECOND_CHANCE:
+                return "Rallying Cry of the Dragonslayer, Warchief's Blessing and Spirit of Zandalar survive the first time you die with them: they come back when you do, with the time they had left.";
+            case PERK_PERSONAL_BANKING:
+                return "Any innkeeper can open your bank. Once an hour.";
             case PERK_FOR_GREAT_HONOR:
                 return Acore::StringFormat("You gain {}% more honor from honorable kills.", value);
             case PERK_GOURMAND:
@@ -531,15 +562,21 @@ namespace Legacy
             case PERK_SALVAGER:
                 return Acore::StringFormat("A {}% chance of one more material when you disenchant, prospect or mill.", value);
             case PERK_DEDICATED_STUDY:
-                return "Once a day, your lowest profession (primary or secondary) that isn't at its maximum gains 1 skill. Once all of them are, it does nothing.";
+                return "Once a day, your lowest profession (primary or secondary) that isn't at its maximum gains 1 skill. Once all of them are, you get 3 of a random Elemental Essence instead.";
             case PERK_SWIFT_GATHERER:
                 return Acore::StringFormat("Mining, Herbalism and Skinning take {}% less time.", value);
+            case PERK_MASTER_FORAGER:
+                return Acore::StringFormat("Your Mining, Herbalism and Skinning skills are {} higher, and your Fishing {} higher.", value, value * 5);
+            case PERK_PERFORMANCE_BONUS:
+                return Acore::StringFormat("A {}% chance of double Merchant's Favor when you hand in a Sealed crate at your trade camp.", value);
             case PERK_DEEP_POCKETS:
                 return Acore::StringFormat("Each bag in your four bag slots has {} more slot{} (36 at most). Permanent: once saved, this rank can't be taken back.",
                     value, value == 1 ? "" : "s");
             case PERK_HASTY_HEARTH:
                 return Acore::StringFormat("Your Hearthstone cools down in {} min instead of 30. Astral Recall, Scrolls of Recall and the other ways home cool down {} min sooner too, never below 5 min.",
                     30 - value, value);
+            case PERK_SECOND_HOME:
+                return "Gives you a second Hearthstone, Second Home. Use it at an inn or in a city to make that your Second Home; use it anywhere else to go there. It shares the Hearthstone's cooldown.";
             default:
                 return perk.description;
         }
