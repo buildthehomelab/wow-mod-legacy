@@ -8,6 +8,7 @@ DROP TABLE IF EXISTS `mod_legacy_challenge_done`;
 DROP TABLE IF EXISTS `mod_legacy_rank`;
 DROP TABLE IF EXISTS `mod_legacy_character`;
 DROP TABLE IF EXISTS `mod_legacy_home`;
+DROP TABLE IF EXISTS `mod_legacy_second_chance`;
 -- Second Home stones and Personal Banking's saved cooldown.
 DELETE FROM `character_inventory` WHERE `item` IN (SELECT `guid` FROM `item_instance` WHERE `itemEntry` = 40582);
 DELETE FROM `item_instance` WHERE `itemEntry` = 40582;

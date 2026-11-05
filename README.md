@@ -75,7 +75,8 @@ it shows the same cast bar and shares its cooldown. The module puts it in the ba
 with the perk (at login, when the perk is saved, and every 30 seconds if the bags were full or the
 stone was thrown away) and takes it away when the perk goes. A stone used in a rest area sets the
 Second Home there and doesn't start the cooldown; the client won't use it while the Hearthstone is
-cooling down, which is what the innkeeper's line is for.
+cooling down, which is what the innkeeper's line is for. A Second Home has to be on solid ground:
+not while falling, flying or swimming, on a boat or zeppelin, or in an instance.
 
 The backpack itself stays at 16: unlike a bag, it has no size the server can change.
 How it works: a bag's size is a value on the bag that the server sends to the client. A stock
@@ -138,8 +139,8 @@ talent reset, like after a level-down. Bots have no perks and keep the core's co
 | Iron Stomach | 3 | Potions cool down 6 sec sooner (18 sec at 3/3). Not in dungeons, raids or battlegrounds. |
 | Fast Recovery | 5 | Out of combat, an extra 0.5% of your health and mana every 5 sec (2.5% at 5/5). Not in battlegrounds or arenas. |
 | Conquering Hero | 2 | Rallying Cry of the Dragonslayer, Warchief's Blessing and Spirit of Zandalar last 50% longer. Fourth row. |
-| Second Chance | 1 | Those three buffs survive the first time you die with them: they come back when you do, with the time they had left. Fourth row; needs Conquering Hero 2/2. |
-| Personal Banking | 1 | Any innkeeper can open your bank ("Open my bank" in their menu), once an hour. Fourth row. |
+| Second Chance | 1 | Those three buffs survive the first time you die with them: they come back when you do, with the time they had left. The same buff doesn't come back a second time (relogs included); a new one does. Fourth row; needs Conquering Hero 2/2. |
+| Personal Banking | 1 | Any innkeeper can open your bank ("Open my bank" in their menu), once an hour: Jeeves appears beside you for 2 minutes, seen by you alone, and the bank closes when you walk away or he leaves. Fourth row. |
 
 ### Professions
 
@@ -172,8 +173,9 @@ The last perks in each tree (Master Swimmer; Iron Stomach, Fast Recovery, Conque
 Chance, Personal Banking; Master Forager; Second Home) and Performance Bonus are in WoW Forever's
 game data (build 1.60.1.70790) but not yet on its trees, except Performance Bonus. The data gives one
 value for each, which is the max rank here. Second Home is an item because a 3.3.5a client can't
-learn a new spell without a patch. Second Chance remembers which buffs already came back until you
-log out, so a relog gives them another chance.
+learn a new spell without a patch. Second Chance knows a buff that already came back by when it
+runs out, counted in /played time; time spent in a raid (where mod-forever-world-buffs pauses these
+buffs) moves that later, so a raid of more than 5 minutes gives the buff another chance.
 
 Some perks also work a little differently, because of what the core lets a module change:
 
@@ -276,8 +278,9 @@ them:
 - item_template 40582: the Second Home stone (TrinityCore's unused "[TDB PH] - unsused
   Scourgestone" row, put back by the uninstall SQL). spell_script_names: `spell_legacy_second_home`
   on the Hearthstone's spell 8690.
+- Personal Banking summons the stock Jeeves (creature 35642) with only the banker flag.
 - Tables: `mod_legacy_challenge` (world); `mod_legacy_challenge_done`, `mod_legacy_rank`,
-  `mod_legacy_character` and `mod_legacy_home` (characters).
+  `mod_legacy_character`, `mod_legacy_home` and `mod_legacy_second_chance` (characters).
 
 ## Troubleshooting
 

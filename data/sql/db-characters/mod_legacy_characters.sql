@@ -38,3 +38,12 @@ CREATE TABLE IF NOT EXISTS `mod_legacy_home` (
     `o` FLOAT NOT NULL,
     PRIMARY KEY (`guid`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='mod-legacy: Second Home per character';
+
+-- Second Chance: when each boss buff that came back after a death runs out, in seconds of the
+-- character's /played time. The same buff doesn't come back again; a new one runs out later.
+CREATE TABLE IF NOT EXISTS `mod_legacy_second_chance` (
+    `guid` INT UNSIGNED NOT NULL COMMENT 'characters.guid',
+    `spell` INT UNSIGNED NOT NULL,
+    `expires_played` INT UNSIGNED NOT NULL,
+    PRIMARY KEY (`guid`, `spell`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='mod-legacy: Second Chance per character';
